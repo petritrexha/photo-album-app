@@ -11,8 +11,8 @@ export type Album = {
 }
 export type Page = { id: string; background: string; elements: PageElement[] }
 export type PageElement = {
-  id: string; type: 'image' | 'text'
-  url?: string; photoId?: string
+  id: string; type: 'image' | 'text' | 'frame'
+  url?: string; photoId?: string; frameId?: string
   text?: string; fontSize?: number; fill?: string
   fontFamily?: string; fontStyle?: string
   align?: 'left' | 'center' | 'right'; lineHeight?: number
@@ -22,4 +22,9 @@ export type Photo = {
   id: string; album_id: string | null; user_id: string
   url: string; cloudinary_id: string | null
   width: number; height: number; created_at: string
+}
+export type Frame = {
+  id: string; album_id: string | null; user_id: string
+  url: string; cloudinary_id: string | null
+  name: string; width: number; height: number; created_at: string
 }
