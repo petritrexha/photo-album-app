@@ -14,6 +14,8 @@ export type PageElement = {
   id: string; type: 'image' | 'text'
   url?: string; photoId?: string
   text?: string; fontSize?: number; fill?: string
+  fontFamily?: string; fontStyle?: string
+  align?: 'left' | 'center' | 'right'; lineHeight?: number
   x: number; y: number; width: number; height: number; rotation: number
 }
 export type Photo = {

@@ -20,6 +20,8 @@ export default function AlbumEditorPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [title, setTitle] = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [showAiPanel, setShowAiPanel] = useState(false)
 
   useEffect(() => { loadAlbum() }, [albumId])
 
@@ -67,22 +69,24 @@ export default function AlbumEditorPage() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept: { 'image/*': [] }, multiple: true })
 
   async function generateAILayout() {
-    if (photos.length === 0) { alert('Upload some photos first!'); return }
-    setAiLoading(true)
-    try {
-      const res = await fetch('/api/ai-layout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          photos: photos.map(p => ({ id: p.id, url: p.url, width: p.width, height: p.height })),
-          pageCount: Math.ceil(photos.length / 3),
-        }),
-      })
-      const { pages } = await res.json()
-      if (pages && album) { setAlbum({ ...album, pages }); setIsDirty(true) }
-    } catch (err) { console.error('AI layout failed:', err) }
-    setAiLoading(false)
-  }
+  if (photos.length === 0) { alert('Upload some photos first!'); return }
+  setAiLoading(true)
+  setShowAiPanel(false)
+  try {
+    const res = await fetch('/api/ai-layout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        photos: photos.map(p => ({ id: p.id, url: p.url, width: p.width, height: p.height })),
+        pageCount: Math.max(Math.ceil(photos.length / 3), 1),
+        prompt: aiPrompt,
+      }),
+    })
+    const { pages } = await res.json()
+    if (pages && album) { setAlbum({ ...album, pages }); setIsDirty(true) }
+  } catch (err) { console.error('AI layout failed:', err) }
+  setAiLoading(false)
+}
 
   async function exportPDF() {
     const { default: jsPDF } = await import('jspdf')
@@ -131,11 +135,77 @@ export default function AlbumEditorPage() {
           </h1>
         )}
         <div style={{ flex: 1 }} />
-        <button onClick={generateAILayout} disabled={aiLoading}
+        {showAiPanel && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200
+          }} onClick={() => setShowAiPanel(false)}>
+            <div style={{
+              background: '#111', border: '1px solid #2a2a2a', borderRadius: '12px',
+              padding: '40px', width: '100%', maxWidth: '560px'
+            }} onClick={e => e.stopPropagation()}>
+              <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '26px',
+                fontWeight: 400, marginBottom: '8px', color: '#f5f0e8' }}>
+                Describe your album
+              </h2>
+              <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif',
+                fontSize: '13px', marginBottom: '24px', lineHeight: 1.6 }}>
+                Describe any style, mood, or aesthetic. Be as specific as you want.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
+                {[
+                  '1970s Italian summer, warm film, handwritten feel',
+                  'Dark moody wedding, black backgrounds, gold accents',
+                  'Minimal Japanese style, white space, small clean text',
+                  'Vibrant travel diary, bright colors, adventurous energy',
+                  'Elegant black and white, cinematic, dramatic shadows',
+                ].map(example => (
+                  <button key={example} onClick={() => setAiPrompt(example)}
+                    style={{ background: '#1a1a1a', border: '1px solid #2a2a2a',
+                      color: '#777', padding: '6px 12px', borderRadius: '20px',
+                      cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '12px' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#d48c3a'; e.currentTarget.style.color = '#d48c3a' }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#2a2a2a'; e.currentTarget.style.color = '#777' }}>
+                    {example}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={aiPrompt}
+                onChange={e => setAiPrompt(e.target.value)}
+                placeholder="e.g. A romantic Parisian honeymoon — soft pinks and creams, elegant serif fonts, dreamy and intimate..."
+                rows={4}
+                style={{ width: '100%', background: '#1a1a1a', border: '1px solid #2a2a2a',
+                  color: '#f5f0e8', padding: '14px', borderRadius: '8px',
+                  fontFamily: 'DM Sans, sans-serif', fontSize: '14px', outline: 'none',
+                  resize: 'vertical', lineHeight: 1.6, marginBottom: '20px' }}
+                onFocus={e => e.target.style.borderColor = '#d48c3a'}
+                onBlur={e => e.target.style.borderColor = '#2a2a2a'}
+              />
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowAiPanel(false)}
+                  style={{ background: 'none', border: '1px solid #2a2a2a', color: '#555',
+                    padding: '10px 24px', borderRadius: '6px', cursor: 'pointer',
+                    fontFamily: 'DM Sans, sans-serif', fontSize: '14px' }}>
+                  Cancel
+                </button>
+                <button onClick={generateAILayout} disabled={aiLoading}
+                  style={{ background: '#d48c3a', border: 'none', color: '#0e0e0e',
+                    padding: '10px 28px', borderRadius: '6px', cursor: 'pointer',
+                    fontFamily: 'DM Sans, sans-serif', fontWeight: 500, fontSize: '14px',
+                    opacity: aiLoading ? 0.6 : 1 }}>
+                  {aiLoading ? '✨ Generating…' : '✨ Generate Album'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <button onClick={() => setShowAiPanel(true)} disabled={aiLoading}
           style={{ background: '#1a1a1a', border: '1px solid #333', color: '#d48c3a',
             padding: '8px 16px', borderRadius: '4px', cursor: aiLoading ? 'not-allowed' : 'pointer',
             fontFamily: 'DM Sans, sans-serif', fontSize: '13px', opacity: aiLoading ? 0.6 : 1 }}>
-          {aiLoading ? '✨ Generating…' : '✨ AI Layout'}
+          {aiLoading ? '✨ Generating…' : '✨ AI Style'}
         </button>
         <button onClick={exportPDF}
           style={{ background: '#1a1a1a', border: '1px solid #333', color: '#f5f0e8',
