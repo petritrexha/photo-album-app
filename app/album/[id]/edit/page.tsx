@@ -196,16 +196,20 @@ export default function AlbumEditorPage() {
   const {
     album, setAlbum, currentPageIndex, setCurrentPageIndex,
     photos, setPhotos, addPhoto,
-    frames, setFrames, addFrame,
+    frames, setFrames, addFrame, removeFrame,
     addPage, deletePage,
     isDirty, setIsDirty, undo, selectedElementId, deleteElement, addElement,
   } = useAlbumStore()
 
   const [saving, setSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
-  const [frameUploadProgress, setFrameUploadProgress] = useState<number | null>(null)
+  const [frameUploading, setFrameUploading] = useState(false)
+  const frameInputRef = useRef<HTMLInputElement>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiRefining, setAiRefining] = useState(false)
+  const [refineLoading, setRefineLoading] = useState(false)
+  const [refineModalOpen, setRefineModalOpen] = useState(false)
+  const [refinePrompt, setRefinePrompt] = useState('')
   const [title, setTitle] = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
@@ -226,13 +230,21 @@ export default function AlbumEditorPage() {
     if (!data) { router.push('/dashboard'); return }
     setAlbum(data)
     setTitle(data.title)
-    const [{ data: photoData }, { data: frameData }] = await Promise.all([
-      supabase.from('photos').select('*').eq('album_id', albumId).order('created_at'),
-      supabase.from('frames').select('*').eq('album_id', albumId).order('created_at'),
-    ])
+    const { data: photoData } = await supabase.from('photos').select('*').eq('album_id', albumId).order('created_at')
     setPhotos(photoData || [])
-    setFrames(frameData || [])
   }
+
+  // ── Load User Frames ─────────────────────────────────────────────────────
+  useEffect(() => {
+    async function loadFrames() {
+      const { data } = await supabase
+        .from('frames')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (data) setFrames(data)
+    }
+    loadFrames()
+  }, [setFrames])
 
   // ── Save ─────────────────────────────────────────────────────────────────
   const saveAlbum = useCallback(async () => {
@@ -294,37 +306,102 @@ export default function AlbumEditorPage() {
     setUploadProgress(null)
   }, [albumId, addPhoto])
 
-  // ── Frame upload (PNG with transparency) ─────────────────────────────────
-  const onFrameDrop = useCallback(async (files: File[]) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    for (const file of files) {
-      setFrameUploadProgress(0)
-      try {
-        const result = await uploadWithProgress(file, 'photo-album-app/frames', (pct) => setFrameUploadProgress(pct))
-        const name = file.name.replace(/\.[^.]+$/, '') // strip extension
-        const { data: frame } = await supabase.from('frames').insert({
-          album_id: albumId, user_id: user.id, url: result.secure_url,
-          cloudinary_id: result.public_id, width: result.width, height: result.height,
+  // ── Frame Management ────────────────────────────────────────────────────
+  async function uploadFrame(file: File) {
+    console.log('uploadFrame start', file.name, file.type, file.size)
+    setFrameUploading(true)
+    try {
+      // Step 1: get user
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      console.log('user:', user?.id, 'userError:', userError)
+      if (!user) {
+        console.log('STOPPED: no user')
+        return
+      }
+
+      // Step 2: cloudinary upload
+      console.log('uploading to cloudinary...')
+      const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+      const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+      console.log('cloud name:', CLOUD_NAME, 'preset:', UPLOAD_PRESET)
+
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('upload_preset', UPLOAD_PRESET!)
+      formData.append('folder', 'photo-album-app/frames')
+
+      const cloudRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+        { method: 'POST', body: formData }
+      )
+      const cloudData = await cloudRes.json()
+      console.log('cloudinary response:', cloudData)
+
+      if (!cloudData.secure_url) {
+        console.log('STOPPED: no secure_url from cloudinary', cloudData)
+        return
+      }
+
+      // Step 3: save to supabase
+      const name = file.name.replace(/\.[^/.]+$/, '')
+      const url = cloudData.secure_url
+      console.log('inserting to supabase:', { user_id: user.id, name, url, cloudinary_id: cloudData.public_id })
+
+      const { data: saved, error: insertError } = await supabase
+        .from('frames')
+        .insert({
+          user_id: user.id,
           name,
-        }).select().single()
-        if (frame) addFrame(frame)
-      } catch (err) { console.error('Frame upload failed:', err) }
+          url,
+          cloudinary_id: cloudData.public_id,
+          width: cloudData.width,
+          height: cloudData.height,
+          album_id: null,
+        })
+        .select()
+        .single()
+
+      console.log('supabase insert result - saved:', saved, 'error:', insertError)
+
+      if (insertError) {
+        console.log('STOPPED: supabase insert failed', insertError)
+        return
+      }
+
+      // Step 4: update store
+      console.log('calling addFrame with:', saved)
+      addFrame(saved)
+      console.log('addFrame called, frames should update')
+
+    } catch (err) {
+      console.error('uploadFrame caught error:', err)
+    } finally {
+      setFrameUploading(false)
+      console.log('uploadFrame done')
     }
-    setFrameUploadProgress(null)
-  }, [albumId, addFrame])
+  }
+
+  function addFrameToCanvas(url: string) {
+    addElement(currentPageIndex, {
+      id: crypto.randomUUID(), type: 'frame', url,
+      x: 200, y: 150, width: 300, height: 300, rotation: 0
+    })
+  }
+
+  async function deleteFrame(id: string) {
+    const { error } = await supabase
+      .from('frames')
+      .delete()
+      .eq('id', id)
+
+    if (!error) removeFrame(id)
+  }
 
   const {
     getRootProps: getPhotoRootProps,
     getInputProps: getPhotoInputProps,
     isDragActive: isPhotoDragActive,
   } = useDropzone({ onDrop: onPhotoDrop, accept: { 'image/*': [] }, multiple: true })
-
-  const {
-    getRootProps: getFrameRootProps,
-    getInputProps: getFrameInputProps,
-    isDragActive: isFrameDragActive,
-  } = useDropzone({ onDrop: onFrameDrop, accept: { 'image/png': [], 'image/gif': [], 'image/webp': [] }, multiple: true })
 
   // ── AI generate fresh layout ─────────────────────────────────────────────
   async function generateAILayout() {
@@ -374,6 +451,46 @@ export default function AlbumEditorPage() {
       if (pages && album) { setAlbum({ ...album, pages }); setIsDirty(true) }
     } catch (err) { console.error('AI refine failed:', err) }
     setAiRefining(false)
+  }
+
+  async function refineCanvasWithAI() {
+    if (!album || !refinePrompt.trim()) return
+    setRefineLoading(true)
+    setRefineModalOpen(false)
+
+    const currentPage = album.pages[currentPageIndex]
+    const elements = currentPage.elements
+
+
+
+    try {
+      const res = await fetch('/api/refine-layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          elements,
+          prompt: refinePrompt,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Refine failed')
+      const updatedElements = data.elements
+
+      const updatedPages = album.pages.map((page, i) =>
+        i === currentPageIndex
+          ? { ...page, elements: updatedElements }
+          : page
+      )
+      setAlbum({ ...album, pages: updatedPages })
+      setIsDirty(true)
+    } catch (err) {
+      console.error('Refine failed:', err)
+      alert('Refine failed. Check console for details.')
+    } finally {
+      setRefineLoading(false)
+      setRefinePrompt('')
+    }
   }
 
   // ── Set cover photo ──────────────────────────────────────────────────────
@@ -459,6 +576,13 @@ export default function AlbumEditorPage() {
         <button onClick={() => setShowAiPanel(true)} disabled={isLoading}
           style={{ ...navBtnBase, color: '#d48c3a', opacity: isLoading ? 0.6 : 1, cursor: isLoading ? 'not-allowed' : 'pointer' }}>
           {aiLoading ? '✨ Generating…' : '✨ AI Style'}
+        </button>
+
+        <button onClick={() => setRefineModalOpen(true)} disabled={refineLoading}
+          style={{ background: '#1a1a1a', border: '1px solid #333', color: '#a78bfa',
+            padding: '8px 16px', borderRadius: '4px', cursor: refineLoading ? 'not-allowed' : 'pointer',
+            fontFamily: 'DM Sans, sans-serif', fontSize: '13px', opacity: refineLoading ? 0.6 : 1 }}>
+          {refineLoading ? '✨ Refining…' : '✨ Refine'}
         </button>
 
         <button onClick={() => setShowPrintModal(true)} style={navBtnBase}>↓ Export PDF</button>
@@ -613,60 +737,70 @@ export default function AlbumEditorPage() {
           {rightTab === 'frames' && (
             <>
               <div style={{ padding: '12px', borderBottom: '1px solid #1a1a1a' }}>
-                <p style={{ color: '#444', fontSize: '10px', fontFamily: 'DM Sans, sans-serif', lineHeight: 1.4, marginBottom: '8px' }}>
-                  Upload PNG/WebP frames with transparency
-                </p>
-                <div {...getFrameRootProps()} style={{ border: `2px dashed ${isFrameDragActive ? '#d48c3a' : '#2a2a2a'}`, borderRadius: '6px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', background: isFrameDragActive ? '#1a1200' : 'transparent' }}>
-                  <input {...getFrameInputProps()} />
-                  {frameUploadProgress !== null ? (
-                    <div>
-                      <div style={{ height: '4px', background: '#1a1a1a', borderRadius: '2px', overflow: 'hidden', marginBottom: '6px' }}>
-                        <div style={{ height: '100%', width: `${frameUploadProgress}%`, background: '#d48c3a', borderRadius: '2px', transition: 'width 0.2s ease' }} />
-                      </div>
-                      <p style={{ color: '#d48c3a', fontSize: '11px', fontFamily: 'DM Sans, sans-serif' }}>{frameUploadProgress}%</p>
-                    </div>
-                  ) : (
-                    <p style={{ color: isFrameDragActive ? '#d48c3a' : '#444', fontSize: '12px', fontFamily: 'DM Sans, sans-serif', lineHeight: 1.5 }}>
-                      {isFrameDragActive ? 'Drop here' : 'Drop frames\nor click'}
-                    </p>
-                  )}
-                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={frameInputRef}
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      uploadFrame(e.target.files[0])
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => frameInputRef.current?.click()}
+                  disabled={frameUploading}
+                  style={{
+                    width: '100%', background: '#1a1a1a', border: '1px dashed #d48c3a', color: '#d48c3a',
+                    padding: '12px 0', borderRadius: '6px', cursor: frameUploading ? 'not-allowed' : 'pointer',
+                    fontFamily: 'DM Sans, sans-serif', fontSize: '13px', textAlign: 'center'
+                  }}
+                >
+                  {frameUploading ? 'Uploading...' : '+ Upload Frame (PNG)'}
+                </button>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                {frames.length === 0 && (
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', alignContent: 'start' }}>
+                {frames.length === 0 && !frameUploading && (
                   <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px 8px' }}>
-                    <p style={{ color: '#333', fontFamily: 'DM Sans, sans-serif', fontSize: '11px', lineHeight: 1.6 }}>
-                      No frames yet.<br />Upload PNG files with transparency.
+                    <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '12px' }}>
+                      No frames yet.
                     </p>
                   </div>
                 )}
                 {frames.map((frame) => (
                   <div key={frame.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('frameId', frame.id)
-                      e.dataTransfer.setData('photoUrl', frame.url)
-                      e.dataTransfer.setData('photoWidth', frame.width.toString())
-                      e.dataTransfer.setData('photoHeight', frame.height.toString())
-                      e.dataTransfer.setData('elementType', 'frame')
-                    }}
-                    title={frame.name}
+                    onClick={() => addFrameToCanvas(frame.url)}
                     style={{
                       position: 'relative', borderRadius: '4px', overflow: 'hidden', aspectRatio: '1',
                       background: 'repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 0 0 / 12px 12px',
-                      cursor: 'grab', border: '1px solid #2a2a2a',
-                    }}>
+                      cursor: 'pointer', border: '1px solid #2a2a2a',
+                    }}
+                    onMouseEnter={e => {
+                      const btn = e.currentTarget.querySelector('.delete-btn') as HTMLElement
+                      if (btn) btn.style.opacity = '1'
+                    }}
+                    onMouseLeave={e => {
+                      const btn = e.currentTarget.querySelector('.delete-btn') as HTMLElement
+                      if (btn) btn.style.opacity = '0'
+                    }}
+                  >
                     <img src={frame.url} alt={frame.name}
                       style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-                    {/* name tooltip on hover */}
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.8)', padding: '2px 0', opacity: 0, transition: 'opacity 0.15s' }}
-                      onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                      onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>
-                      <p style={{ color: '#f5f0e8', fontFamily: 'DM Sans, sans-serif', fontSize: '9px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 4px' }}>
-                        {frame.name}
-                      </p>
-                    </div>
+                    <button
+                      className="delete-btn"
+                      title="Delete Frame"
+                      onClick={(e) => { e.stopPropagation(); deleteFrame(frame.id) }}
+                      style={{
+                        position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.7)',
+                        color: '#d48c3a', border: 'none', borderRadius: '50%', width: '20px', height: '20px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                        fontSize: '14px', lineHeight: 1, opacity: 0, transition: 'opacity 0.15s'
+                      }}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
               </div>
@@ -688,6 +822,38 @@ export default function AlbumEditorPage() {
           onRefine={refineWithAI}
           refining={aiRefining}
         />
+      )}
+      {refineModalOpen && (
+        <div onClick={() => setRefineModalOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#111', border: '1px solid #222', borderRadius: '8px', padding: '32px', width: '100%', maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '24px', fontWeight: 400, color: '#f5f0e8', margin: 0 }}>Refine with AI</h2>
+            <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '13px', margin: 0 }}>Describe how to rearrange the elements on this page. Works on photos, frames, and text.</p>
+            <textarea
+              value={refinePrompt} onChange={(e) => setRefinePrompt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) refineCanvasWithAI() }}
+              placeholder="e.g. arrange 4 frames in a 2x2 equal grid with 20px gaps"
+              rows={3}
+              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#f5f0e8',
+                padding: '12px', borderRadius: '4px', fontFamily: 'DM Sans, sans-serif',
+                fontSize: '14px', outline: 'none', resize: 'none' }}
+            />
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setRefineModalOpen(false)}
+                style={{ background: 'none', border: '1px solid #333', color: '#666',
+                  padding: '8px 16px', borderRadius: '4px', cursor: 'pointer',
+                  fontFamily: 'DM Sans, sans-serif', fontSize: '13px' }}>
+                Cancel
+              </button>
+              <button onClick={refineCanvasWithAI} disabled={!refinePrompt.trim()}
+                style={{ background: '#a78bfa', border: 'none', color: '#0e0e0e',
+                  padding: '8px 20px', borderRadius: '4px', cursor: 'pointer',
+                  fontFamily: 'DM Sans, sans-serif', fontWeight: 500, fontSize: '13px',
+                  opacity: refinePrompt.trim() ? 1 : 0.4 }}>
+                Refine
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

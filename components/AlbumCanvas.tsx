@@ -414,19 +414,30 @@ export default function AlbumCanvas() {
           >
             <Layer>
               <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill={currentPage.background} />
-              {currentPage.elements.map((el) =>
-              el.type === 'image' || el.type === 'frame' ? (
-                <PhotoElement key={el.id} element={el}
-                  isSelected={selectedElementId === el.id}
-                  onSelect={() => setSelectedElementId(el.id)}
-                  onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
-              ) : (
-                <TextElement key={el.id} element={el}
-                  isSelected={selectedElementId === el.id}
-                  onSelect={() => setSelectedElementId(el.id)}
-                  onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
-              )
-            )}
+              {currentPage.elements.map((el) => {
+                if (el.type === 'image') {
+                  return (
+                    <PhotoElement key={el.id} element={el}
+                      isSelected={selectedElementId === el.id}
+                      onSelect={() => setSelectedElementId(el.id)}
+                      onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
+                  )
+                }
+                if (el.type === 'frame') {
+                  return (
+                    <PhotoElement key={el.id} element={el}
+                      isSelected={selectedElementId === el.id}
+                      onSelect={() => setSelectedElementId(el.id)}
+                      onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
+                  )
+                }
+                return (
+                  <TextElement key={el.id} element={el}
+                    isSelected={selectedElementId === el.id}
+                    onSelect={() => setSelectedElementId(el.id)}
+                    onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
+                )
+              })}
               {/* Invisible hit areas for context menu on elements */}
               {currentPage.elements.map((el) => (
                 <Rect

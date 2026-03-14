@@ -7,7 +7,7 @@ type AlbumStore = {
   album: Album | null; setAlbum: (album: Album) => void
   currentPageIndex: number; setCurrentPageIndex: (i: number) => void
   photos: Photo[]; setPhotos: (p: Photo[]) => void; addPhoto: (p: Photo) => void
-  frames: Frame[]; setFrames: (f: Frame[]) => void; addFrame: (f: Frame) => void
+  frames: Frame[]; setFrames: (f: Frame[]) => void; addFrame: (f: Frame) => void; removeFrame: (id: string) => void
   selectedElementId: string | null; setSelectedElementId: (id: string | null) => void
   addPage: () => void; deletePage: (i: number) => void; updatePage: (i: number, page: Page) => void
   addElement: (pageIndex: number, el: PageElement) => void
@@ -41,7 +41,8 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   // ── Frames ────────────────────────────────────────────────────────────
   frames: [],
   setFrames: (frames) => set({ frames }),
-  addFrame: (frame) => set((s) => ({ frames: [...s.frames, frame] })),
+  addFrame: (frame) => set((s) => ({ frames: [frame, ...s.frames] })),
+  removeFrame: (id) => set((s) => ({ frames: s.frames.filter((f) => f.id !== id) })),
 
   selectedElementId: null,
   setSelectedElementId: (id) => set({ selectedElementId: id }),

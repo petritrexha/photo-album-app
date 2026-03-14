@@ -24,7 +24,13 @@ export type Photo = {
   width: number; height: number; created_at: string
 }
 export type Frame = {
-  id: string; album_id: string | null; user_id: string
-  url: string; cloudinary_id: string | null
-  name: string; width: number; height: number; created_at: string
+  id: string
+  user_id: string
+  album_id: string | null
+  name: string
+  url: string
+  cloudinary_id: string | null
+  width: number
+  height: number
+  created_at: string
 }
