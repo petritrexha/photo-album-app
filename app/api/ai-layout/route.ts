@@ -60,19 +60,29 @@ export async function POST(req: NextRequest) {
   // 1. Auth check
   const authHeader = req.headers.get('authorization')
   const token = authHeader?.replace('Bearer ', '')
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!token) {
+    return NextResponse.json(
+      { error: 'Nuk jeni të kyçur. Ju lutemi kyçuni dhe provoni përsëri.' },
+      { status: 401 }
+    )
+  }
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
   const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-  if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (authError || !user) {
+    return NextResponse.json(
+      { error: 'Sesioni juaj ka skaduar. Ju lutemi kyçuni përsëri.' },
+      { status: 401 }
+    )
+  }
 
   // 2. Rate limit
   if (!checkRateLimit(user.id)) {
     return NextResponse.json(
-      { error: 'Too many requests. Please wait a moment before generating again.' },
+      { error: 'Keni bërë shumë kërkesa. Prisni një moment dhe provoni përsëri.' },
       { status: 429 }
     )
   }
@@ -87,12 +97,20 @@ export async function POST(req: NextRequest) {
     : null
 
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: 'Shërbimi AI nuk është konfiguruar. Kontaktoni administratorin.' },
+      { status: 500 }
+    )
+  }
 
   // ── REFINE MODE: preserve photo positions, update style only ───────────────
   if (mode === 'refine') {
     if (!currentPages || !Array.isArray(currentPages) || currentPages.length === 0) {
-      return NextResponse.json({ error: 'No current pages provided for refinement' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Nuk ka faqe ekzistuese për të rifreskuar. Gjeneroni albumin fillimisht.' },
+        { status: 400 }
+      )
     }
 
     const styleInstruction = sanitizedPrompt
@@ -185,7 +203,7 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
       if (!res.ok) {
         const errBody = await res.text()
         console.error('Claude refine error:', res.status, errBody)
-        throw new Error(`Claude API returned ${res.status}`)
+        throw new Error(`Shërbimi AI ktheu gabim: ${res.status}`)
       }
 
       const data = await res.json()
@@ -197,12 +215,12 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
         refinement = JSON.parse(cleaned)
       } catch {
         console.error('Refine JSON parse failed:', rawText.slice(0, 500))
-        throw new Error('Refinement output was not valid JSON')
+        throw new Error('Përgjigja nga AI nuk ishte e vlefshme. Provoni përsëri.')
       }
 
       if (!isValidRefinement(refinement)) {
         console.error('Refinement schema invalid:', JSON.stringify(refinement).slice(0, 500))
-        throw new Error('Refinement schema invalid')
+        throw new Error('Struktura e rifreskimit nga AI ishte e gabuar. Provoni përsëri.')
       }
 
       // Merge refinement into current pages (preserve all image/frame elements)
@@ -211,7 +229,7 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
         if (!update) return page
 
         const updatedElements = page.elements.map((el: any) => {
-          if (el.type !== 'text') return el // preserve images & frames untouched
+          if (el.type !== 'text') return el
           const textUpdate = update.textUpdates?.find((t: any) => t.elementId === el.id)
           if (!textUpdate) return el
           return {
@@ -241,22 +259,28 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
       })
 
       return NextResponse.json({ pages: refinedPages })
-    } catch (err) {
+
+    } catch (err: any) {
       console.error('AI refine error:', err)
-      return NextResponse.json({ pages: currentPages }) // return unchanged on error
+      return NextResponse.json(
+        { error: err.message || 'Nuk mund të rifreskohet albumi. Provoni përsëri.' },
+        { status: 500 }
+      )
     }
   }
 
   // ── GENERATE MODE (default): fresh layout from scratch ────────────────────
   if (!photos || photos.length === 0) {
-    return NextResponse.json({ error: 'No photos provided' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Nuk keni ngarkuar foto. Ju lutemi ngarkoni të paktën një foto.' },
+      { status: 400 }
+    )
   }
 
   const generateStyleInstruction = sanitizedPrompt
     ? `The user wants this style/mood: "${sanitizedPrompt}". Apply this to every design decision — colors, fonts, spacing, layout style, caption tone.`
     : 'Use a clean, modern editorial style.'
 
-  // System prompt: strict schema + rules
   const generateSystemPrompt = `You are an expert photo album designer. You output ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.
 
 The JSON must strictly follow this schema:
@@ -310,7 +334,6 @@ Design rules:
 - UIDs: use simple sequential ids like "p1", "e1", "e2" etc.
 - Output ONLY the JSON object. Nothing else.`
 
-  // User message: runtime data
   const generateUserMessage = `${generateStyleInstruction}
 
 Photos to use (use these exact IDs in photoId fields):
@@ -340,27 +363,25 @@ Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
     if (!res.ok) {
       const errBody = await res.text()
       console.error('Claude API error:', res.status, errBody)
-      throw new Error(`Claude API returned ${res.status}`)
+      throw new Error(`Shërbimi AI ktheu gabim: ${res.status}`)
     }
 
     const data = await res.json()
     const rawText: string = data.content?.[0]?.text || ''
 
-    // Strip any accidental markdown fences Claude might add
     const cleaned = rawText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
 
-    // Parse + validate
     let layout: unknown
     try {
       layout = JSON.parse(cleaned)
     } catch {
       console.error('JSON parse failed. Raw text:', rawText.slice(0, 500))
-      throw new Error('Claude output was not valid JSON')
+      throw new Error('Përgjigja nga AI nuk ishte e vlefshme. Provoni përsëri.')
     }
 
     if (!isValidLayout(layout)) {
       console.error('Layout schema validation failed:', JSON.stringify(layout).slice(0, 500))
-      throw new Error('Layout schema invalid')
+      throw new Error('Struktura e albumit nga AI ishte e gabuar. Provoni përsëri.')
     }
 
     // Replace __PLACEHOLDER__ URLs with real photo URLs
@@ -377,10 +398,13 @@ Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
     }))
 
     return NextResponse.json({ pages: layout.pages })
-  } catch (err) {
+
+  } catch (err: any) {
     console.error('AI layout error:', err)
-    // Graceful fallback — never crash the client
-    return NextResponse.json({ pages: generateFallbackLayout(photos, pageCount) })
+    return NextResponse.json(
+      { error: err.message || 'Nuk mund të gjenerohet albumi. Provoni përsëri.' },
+      { status: 500 }
+    )
   }
 }
 
