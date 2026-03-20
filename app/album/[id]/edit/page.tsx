@@ -5,101 +5,144 @@ import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { useAlbumStore } from '@/lib/store'
 import { useDropzone } from 'react-dropzone'
+import { useTheme } from '@/lib/theme'
 import type { Photo, Frame } from '@/lib/supabase'
 
 const AlbumCanvas = dynamic(() => import('@/components/AlbumCanvas'), { ssr: false })
-const TemplatesModal = dynamic(() => import('@/components/TemplatesModal'), { ssr: false })
 
-// ── Cloudinary upload with progress ──────────────────────────────────────────
-async function uploadWithProgress(
-  file: File,
-  folder: string,
-  onProgress: (pct: number) => void
-): Promise<{ secure_url: string; public_id: string; width: number; height: number }> {
+// ── SVG Icons ─────────────────────────────────────────────────────
+const Icon = {
+  Sun: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
+  Moon: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
+  ArrowLeft: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>,
+  Plus: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+  Trash: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>,
+  Sparkle: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/></svg>,
+  Download: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+  Save: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>,
+  Check: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  Undo: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>,
+  Grid: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
+  Image: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
+  Type: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>,
+  Layers: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
+  Palette: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>,
+  Frame: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="2" width="20" height="20" rx="2"/><rect x="6" y="6" width="12" height="12"/></svg>,
+}
+
+// ── Cloudinary upload ──────────────────────────────────────────────
+async function uploadWithProgress(file: File, folder: string, onProgress: (p: number) => void) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
   formData.append('folder', folder)
-
-  return new Promise((resolve, reject) => {
+  return new Promise<any>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`)
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90))
-    })
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(100)
-        resolve(JSON.parse(xhr.responseText))
-      } else {
-        reject(new Error(`Upload failed: ${xhr.status}`))
-      }
-    })
-    xhr.addEventListener('error', () => reject(new Error('Upload error')))
+    xhr.upload.addEventListener('progress', e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 90)) })
+    xhr.addEventListener('load', () => { if (xhr.status < 300) { onProgress(100); resolve(JSON.parse(xhr.responseText)) } else reject(new Error('Upload failed')) })
+    xhr.addEventListener('error', () => reject(new Error('Network error')))
     xhr.send(formData)
   })
 }
 
-// ── Print Preview Modal ───────────────────────────────────────────────────────
-type PrintFormat = 'a4-landscape' | 'a4-portrait' | 'square'
-
-function PrintPreviewModal({ onClose, onDownload }: {
+// ── AI Refine Modal ───────────────────────────────────────────────
+function AIRefineModal({ onClose, onRefine, loading }: {
   onClose: () => void
-  onDownload: (format: PrintFormat, bleed: boolean) => Promise<void>
+  onRefine: (prompt: string) => void
+  loading: boolean
 }) {
-  const [format, setFormat] = useState<PrintFormat>('a4-landscape')
-  const [bleed, setBleed] = useState(false)
-  const [exporting, setExporting] = useState(false)
-
-  const formats: { id: PrintFormat; label: string; dims: string }[] = [
-    { id: 'a4-landscape', label: 'A4 Landscape', dims: '297 × 210 mm' },
-    { id: 'a4-portrait', label: 'A4 Portrait', dims: '210 × 297 mm' },
-    { id: 'square', label: 'Square', dims: '210 × 210 mm' },
+  const [prompt, setPrompt] = useState('')
+  const presets = [
+    'Dark moody — black background, gold serif fonts, cinematic',
+    'Minimal Japanese — white space, clean sans-serif, muted tones',
+    'Warm summer — cream backgrounds, script captions, golden hour colors',
+    'Editorial — bold typography, high contrast, magazine-style',
+    'Romantic vintage — muted pinks, ornate fonts, soft vignettes',
   ]
 
-  const btnBase: React.CSSProperties = {
-    background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#777',
-    padding: '12px 16px', borderRadius: '8px', cursor: 'pointer',
-    fontFamily: 'DM Sans, sans-serif', fontSize: '13px', textAlign: 'left',
-  }
-  const btnActiveStyle: React.CSSProperties = { ...btnBase, borderColor: '#d48c3a', color: '#f5f0e8' }
-
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }} onClick={onClose}>
-      <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '40px', width: '100%', maxWidth: '440px' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '22px', fontWeight: 400, color: '#f5f0e8', margin: 0 }}>Export PDF</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '22px', lineHeight: 1 }}>×</button>
+    <div className="overlay animate-fade-in" onClick={onClose} style={{ zIndex: 200 }}>
+      <div
+        className="animate-scale-in modal"
+        style={{ padding: '40px', maxWidth: '560px' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+            <div style={{ color: 'var(--accent)' }}><Icon.Sparkle /></div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 500, color: 'var(--text-primary)' }}>
+              Refine with AI
+            </h2>
+          </div>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Describe the mood or aesthetic. Claude updates backgrounds, captions, and typography — your photo positions stay exactly where they are.
+          </p>
         </div>
-        <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '13px', marginBottom: '28px' }}>Renders at 2× resolution for crisp print quality.</p>
 
-        <p style={{ color: '#888', fontFamily: 'DM Sans, sans-serif', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>Format</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
-          {formats.map(f => (
-            <button key={f.id} style={format === f.id ? btnActiveStyle : btnBase} onClick={() => setFormat(f.id)}>
-              <span style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{f.label}</span>
-                <span style={{ color: '#555', fontSize: '12px' }}>{f.dims}</span>
-              </span>
+        {/* Style previews */}
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          {[
+            { label: 'Preserved', color: 'var(--success)', bg: 'var(--success-muted)', items: 'Photo layout & positions' },
+            { label: 'Restyled', color: 'var(--accent)', bg: 'var(--accent-muted)', items: 'Colors, fonts & captions' },
+          ].map(item => (
+            <div key={item.label} style={{
+              flex: 1, minWidth: '140px',
+              background: item.bg,
+              border: `1px solid ${item.color}33`,
+              borderRadius: 'var(--radius-md)',
+              padding: '10px 12px',
+            }}>
+              <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: item.color, marginBottom: '3px' }}>{item.label}</p>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{item.items}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Preset chips */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
+          {presets.map(p => (
+            <button
+              key={p}
+              onClick={() => setPrompt(p)}
+              style={{
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '12px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-body)',
+                transition: 'all var(--transition-fast)',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}
+            >
+              {p}
             </button>
           ))}
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '32px' }}>
-          <input type="checkbox" checked={bleed} onChange={e => setBleed(e.target.checked)}
-            style={{ width: '16px', height: '16px', accentColor: '#d48c3a', cursor: 'pointer' }} />
-          <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', color: '#888' }}>Add 3mm bleed margins</span>
-        </label>
+        <textarea
+          className="input textarea"
+          value={prompt}
+          onChange={e => setPrompt(e.target.value)}
+          placeholder="Describe the style, mood, or vibe you want for this album…"
+          rows={3}
+          style={{ marginBottom: '20px' }}
+        />
 
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={onClose} style={{ flex: 1, background: 'none', border: '1px solid #2a2a2a', color: '#555', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '14px' }}>
-            Cancel
-          </button>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
           <button
-            disabled={exporting}
-            onClick={async () => { setExporting(true); await onDownload(format, bleed); setExporting(false); onClose() }}
-            style={{ flex: 2, background: '#d48c3a', border: 'none', color: '#0e0e0e', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, fontSize: '14px', opacity: exporting ? 0.6 : 1 }}>
-            {exporting ? 'Exporting…' : '↓ Download PDF'}
+            className="btn btn-ai"
+            style={{ flex: 2, gap: '8px', height: '40px' }}
+            onClick={() => onRefine(prompt)}
+            disabled={loading || !prompt.trim()}
+          >
+            {loading ? <span className="spinner" style={{ width: '13px', height: '13px', borderTopColor: 'var(--accent)' }} /> : <Icon.Sparkle />}
+            {loading ? 'Refining album…' : 'Refine Album'}
           </button>
         </div>
       </div>
@@ -107,79 +150,85 @@ function PrintPreviewModal({ onClose, onDownload }: {
   )
 }
 
-// ── AI Refine Modal ───────────────────────────────────────────────────────────
-function AIRefineModal({ onClose, onRefine, refining }: {
+// ── AI Generate Modal ──────────────────────────────────────────────
+function AIGenerateModal({ onClose, onGenerate, loading }: {
   onClose: () => void
-  onRefine: (prompt: string) => void
-  refining: boolean
+  onGenerate: (prompt: string) => void
+  loading: boolean
 }) {
   const [prompt, setPrompt] = useState('')
-
   const examples = [
-    'Dark moody wedding, gold accents, Playfair fonts',
-    'Minimal Japanese, white space, tiny clean text',
-    'Vibrant travel diary, warm colors, adventurous',
-    'Cinematic black and white, dramatic shadows',
-    '1970s Italian summer, warm film grain aesthetic',
+    '1970s Italian summer — warm film grain, golden hour, handwritten feel',
+    'Dark moody wedding — black backgrounds, amber candlelight, Playfair fonts',
+    'Minimal Japanese — white space, small clean text, very little decoration',
+    'Vibrant travel diary — bright saturated colors, energetic layouts',
+    'Cinematic black and white — dramatic contrast, editorial photography style',
   ]
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }} onClick={onClose}>
-      <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '40px', width: '100%', maxWidth: '540px' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-          <div>
-            <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '24px', fontWeight: 400, color: '#f5f0e8', margin: 0 }}>Refine with AI</h2>
-            <p style={{ color: '#d48c3a', fontFamily: 'DM Sans, sans-serif', fontSize: '12px', marginTop: '4px' }}>
-              Keeps your photo layout — updates colors, fonts &amp; captions only
-            </p>
+    <div className="overlay animate-fade-in" onClick={onClose} style={{ zIndex: 200 }}>
+      <div
+        className="animate-scale-in modal"
+        style={{ padding: '40px', maxWidth: '600px' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+            <div style={{ color: 'var(--accent)' }}><Icon.Sparkle /></div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '26px', fontWeight: 500, color: 'var(--text-primary)' }}>
+              Describe your album
+            </h2>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '22px', lineHeight: 1 }}>×</button>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Describe any style, mood, or aesthetic. Claude will generate a complete fresh layout — pages, photo positions, backgrounds, typography, and captions.
+          </p>
         </div>
 
-        <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '13px', marginBottom: '20px', lineHeight: 1.6 }}>
-          Describe the mood you want. Claude will restyle backgrounds, captions, and typography without moving your photos.
-        </p>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
           {examples.map(ex => (
-            <button key={ex} onClick={() => setPrompt(ex)}
-              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#666', padding: '5px 11px', borderRadius: '20px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '12px' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#d48c3a'; e.currentTarget.style.color = '#d48c3a' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = '#2a2a2a'; e.currentTarget.style.color = '#666' }}>
+            <button
+              key={ex}
+              onClick={() => setPrompt(ex)}
+              style={{
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                padding: '5px 11px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '12px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-body)',
+                transition: 'all var(--transition-fast)',
+                lineHeight: 1.4,
+                textAlign: 'left',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}
+            >
               {ex}
             </button>
           ))}
         </div>
 
         <textarea
+          className="input textarea"
           value={prompt}
           onChange={e => setPrompt(e.target.value)}
-          placeholder="Describe the style, mood, or aesthetic for this album..."
-          rows={3}
-          style={{ width: '100%', background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#f5f0e8', padding: '12px 14px', borderRadius: '8px', fontFamily: 'DM Sans, sans-serif', fontSize: '14px', outline: 'none', resize: 'vertical', lineHeight: 1.6, marginBottom: '20px', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = '#d48c3a'}
-          onBlur={e => e.target.style.borderColor = '#2a2a2a'}
+          placeholder="e.g. A romantic Parisian honeymoon — soft pinks, elegant serif fonts, dreamy overlapping layouts…"
+          rows={4}
+          style={{ marginBottom: '20px' }}
         />
 
-        {/* Visual hint about what stays vs changes */}
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-          <div style={{ flex: 1, background: '#0f1a0f', border: '1px solid #1a3a1a', borderRadius: '6px', padding: '10px 12px' }}>
-            <p style={{ color: '#4a9a4a', fontFamily: 'DM Sans, sans-serif', fontSize: '11px', fontWeight: 600, marginBottom: '4px', letterSpacing: '0.06em' }}>PRESERVED</p>
-            <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '12px', lineHeight: 1.5 }}>Photo positions, sizes, layout structure</p>
-          </div>
-          <div style={{ flex: 1, background: '#1a0f0a', border: '1px solid #3a2010', borderRadius: '6px', padding: '10px 12px' }}>
-            <p style={{ color: '#d48c3a', fontFamily: 'DM Sans, sans-serif', fontSize: '11px', fontWeight: 600, marginBottom: '4px', letterSpacing: '0.06em' }}>RESTYLED</p>
-            <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '12px', lineHeight: 1.5 }}>Backgrounds, captions, fonts, colors</p>
-          </div>
-        </div>
-
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={onClose} style={{ flex: 1, background: 'none', border: '1px solid #2a2a2a', color: '#555', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '14px' }}>
-            Cancel
-          </button>
-          <button onClick={() => onRefine(prompt)} disabled={refining}
-            style={{ flex: 2, background: '#d48c3a', border: 'none', color: '#0e0e0e', padding: '10px', borderRadius: '6px', cursor: refining ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, fontSize: '14px', opacity: refining ? 0.6 : 1 }}>
-            {refining ? '✨ Refining…' : '✨ Refine Album'}
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-ai"
+            style={{ flex: 2, gap: '8px', height: '42px', fontSize: '14px' }}
+            onClick={() => onGenerate(prompt)}
+            disabled={loading}
+          >
+            {loading ? <span className="spinner" style={{ width: '13px', height: '13px', borderTopColor: 'var(--accent)' }} /> : <Icon.Sparkle />}
+            {loading ? 'Generating layout…' : 'Generate Album'}
           </button>
         </div>
       </div>
@@ -187,42 +236,166 @@ function AIRefineModal({ onClose, onRefine, refining }: {
   )
 }
 
-// ── Main Editor Page ──────────────────────────────────────────────────────────
+// ── PDF Export Modal ───────────────────────────────────────────────
+type PrintFormat = 'a4-landscape' | 'a4-portrait' | 'square'
+function ExportModal({ onClose, onExport }: {
+  onClose: () => void
+  onExport: (format: PrintFormat, bleed: boolean) => Promise<void>
+}) {
+  const [format, setFormat] = useState<PrintFormat>('a4-landscape')
+  const [bleed, setBleed] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  const formats: { id: PrintFormat; label: string; dims: string; desc: string }[] = [
+    { id: 'a4-landscape', label: 'A4 Landscape', dims: '297 × 210 mm', desc: 'Standard print format' },
+    { id: 'a4-portrait', label: 'A4 Portrait', dims: '210 × 297 mm', desc: 'Tall/vertical pages' },
+    { id: 'square', label: 'Square', dims: '210 × 210 mm', desc: 'Social media friendly' },
+  ]
+
+  return (
+    <div className="overlay animate-fade-in" onClick={onClose} style={{ zIndex: 200 }}>
+      <div
+        className="animate-scale-in modal"
+        style={{ padding: '40px', maxWidth: '460px' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+            <div style={{ color: 'var(--text-secondary)' }}><Icon.Download /></div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 500, color: 'var(--text-primary)' }}>
+              Export as PDF
+            </h2>
+          </div>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+            Rendered at 2× resolution for crisp print quality.
+          </p>
+        </div>
+
+        <label className="label">Page format</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
+          {formats.map(f => (
+            <button
+              key={f.id}
+              onClick={() => setFormat(f.id)}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 14px',
+                background: format === f.id ? 'var(--accent-muted)' : 'var(--bg-tertiary)',
+                border: `1.5px solid ${format === f.id ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+                fontFamily: 'var(--font-body)',
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '13px', fontWeight: 500, color: format === f.id ? 'var(--accent)' : 'var(--text-primary)' }}>{f.label}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{f.desc}</div>
+              </div>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{f.dims}</span>
+            </button>
+          ))}
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '28px' }}>
+          <input
+            type="checkbox"
+            checked={bleed}
+            onChange={e => setBleed(e.target.checked)}
+            style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <div>
+            <div style={{ fontSize: '13px', color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}>Add 3mm bleed margins</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Recommended for physical printing</div>
+          </div>
+        </label>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            style={{ flex: 2, gap: '8px', height: '42px' }}
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true)
+              await onExport(format, bleed)
+              setExporting(false)
+              onClose()
+            }}
+          >
+            {exporting
+              ? <><span className="spinner" style={{ width: '13px', height: '13px', borderTopColor: '#0a0a0a' }} /> Exporting…</>
+              : <><Icon.Download /> Download PDF</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Right Panel Tabs ───────────────────────────────────────────────
+type RightTab = 'photos' | 'layouts' | 'text' | 'backgrounds' | 'frames'
+
+const RIGHT_TABS: { id: RightTab; icon: React.ReactNode; label: string }[] = [
+  { id: 'photos',      icon: <Icon.Image />,   label: 'Photos' },
+  { id: 'frames',      icon: <Icon.Frame />,   label: 'Frames' },
+  { id: 'text',        icon: <Icon.Type />,    label: 'Text' },
+  { id: 'backgrounds', icon: <Icon.Palette />, label: 'Bg' },
+  { id: 'layouts',     icon: <Icon.Layers />,  label: 'Layout' },
+]
+
+// ── Background presets ─────────────────────────────────────────────
+const BG_PRESETS = [
+  '#0a0a0a', '#1a1a1a', '#2a2018', '#0d1a2a', '#1a0d0d',
+  '#ffffff', '#f5f0e8', '#faf8f4', '#f0f4ff', '#f0fff0',
+  '#1a0a2a', '#0a1a0a', '#2a1a0a', '#0a0a2a', '#1a1a2a',
+]
+
+const GRADIENT_PRESETS = [
+  { from: '#1a1208', to: '#2a1a08', angle: 135 },
+  { from: '#0d1a2a', to: '#1a2a3a', angle: 160 },
+  { from: '#1a0d0d', to: '#2a1a1a', angle: 120 },
+  { from: '#0a0a0a', to: '#1a1a2a', angle: 180 },
+]
+
+// ── Main Editor Page ───────────────────────────────────────────────
 export default function AlbumEditorPage() {
   const router = useRouter()
   const params = useParams()
   const albumId = params.id as string
+  const { theme, toggle } = useTheme()
 
   const {
     album, setAlbum, currentPageIndex, setCurrentPageIndex,
     photos, setPhotos, addPhoto,
     frames, setFrames, addFrame, removeFrame,
-    addPage, deletePage,
-    isDirty, setIsDirty, undo, selectedElementId, deleteElement, addElement,
+    addPage, deletePage, addElement,
+    isDirty, setIsDirty, undo, selectedElementId, deleteElement,
   } = useAlbumStore()
 
-  const [saving, setSaving] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
-  const [frameUploading, setFrameUploading] = useState(false)
-  const frameInputRef = useRef<HTMLInputElement>(null)
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiRefining, setAiRefining] = useState(false)
-  const [refineLoading, setRefineLoading] = useState(false)
-  const [refineModalOpen, setRefineModalOpen] = useState(false)
-  const [refinePrompt, setRefinePrompt] = useState('')
-  const [title, setTitle] = useState('')
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [showAiPanel, setShowAiPanel] = useState(false)
-  const [showAiRefine, setShowAiRefine] = useState(false)
-  const [showPrintModal, setShowPrintModal] = useState(false)
-  const [showTemplates, setShowTemplates] = useState(false)
-  /** 'photos' | 'frames' */
-  const [rightTab, setRightTab] = useState<'photos' | 'frames'>('photos')
-  const savingRef = useRef(saving)
-  savingRef.current = saving
+  // ── Modal/panel states ───────────────────────────────────────────
+  const [showAIGenerate, setShowAIGenerate]   = useState(false)
+  const [showAIRefine, setShowAIRefine]       = useState(false)
+  const [showExport, setShowExport]           = useState(false)
+  const [rightTab, setRightTab]               = useState<RightTab>('photos')
+  const [editingTitle, setEditingTitle]       = useState(false)
+  const [title, setTitle]                     = useState('')
 
-  // ── Load album + frames ──────────────────────────────────────────────────
+  // ── Loading states ───────────────────────────────────────────────
+  const [saving, setSaving]                   = useState(false)
+  const [aiGenerating, setAiGenerating]       = useState(false)
+  const [aiRefining, setAiRefining]           = useState(false)
+  const [uploadProgress, setUploadProgress]   = useState<number | null>(null)
+  const [frameUploading, setFrameUploading]   = useState(false)
+
+  const savingRef = useRef(false)
+  savingRef.current = saving
+  const frameInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Load ─────────────────────────────────────────────────────────
   useEffect(() => { loadAlbum() }, [albumId])
 
   async function loadAlbum() {
@@ -232,21 +405,11 @@ export default function AlbumEditorPage() {
     setTitle(data.title)
     const { data: photoData } = await supabase.from('photos').select('*').eq('album_id', albumId).order('created_at')
     setPhotos(photoData || [])
+    const { data: frameData } = await supabase.from('frames').select('*').order('created_at', { ascending: false })
+    setFrames(frameData || [])
   }
 
-  // ── Load User Frames ─────────────────────────────────────────────────────
-  useEffect(() => {
-    async function loadFrames() {
-      const { data } = await supabase
-        .from('frames')
-        .select('*')
-        .order('created_at', { ascending: false })
-      if (data) setFrames(data)
-    }
-    loadFrames()
-  }, [setFrames])
-
-  // ── Save ─────────────────────────────────────────────────────────────────
+  // ── Save ─────────────────────────────────────────────────────────
   const saveAlbum = useCallback(async () => {
     if (!album || savingRef.current) return
     setSaving(true)
@@ -255,263 +418,147 @@ export default function AlbumEditorPage() {
     setSaving(false)
   }, [album, albumId, setIsDirty])
 
-  async function updateTitle(newTitle: string) {
+  async function updateTitle(t: string) {
     if (!album) return
-    setAlbum({ ...album, title: newTitle })
-    setTitle(newTitle)
+    setAlbum({ ...album, title: t })
+    setTitle(t)
     setIsDirty(true)
   }
 
-  // ── Unsaved changes warning ──────────────────────────────────────────────
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) { e.preventDefault(); e.returnValue = '' }
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [isDirty])
-
-  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  // ── Keyboard shortcuts ───────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
-      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
-        if (selectedElementId) { e.preventDefault(); deleteElement(currentPageIndex, selectedElementId) }
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput && selectedElementId) {
+        e.preventDefault()
+        deleteElement(currentPageIndex, selectedElementId)
       }
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === 's') { e.preventDefault(); saveAlbum() }
-        if (e.key === 'z') { e.preventDefault(); undo() }
-      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveAlbum() }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo() }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [selectedElementId, currentPageIndex, deleteElement, saveAlbum, undo])
 
-  // ── Photo upload ─────────────────────────────────────────────────────────
+  // ── Unsaved changes warning ──────────────────────────────────────
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => { if (isDirty) { e.preventDefault(); e.returnValue = '' } }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [isDirty])
+
+  // ── Photo upload ─────────────────────────────────────────────────
   const onPhotoDrop = useCallback(async (files: File[]) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     for (const file of files) {
       setUploadProgress(0)
       try {
-        const result = await uploadWithProgress(file, 'photo-album-app', (pct) => setUploadProgress(pct))
+        const result = await uploadWithProgress(file, 'photo-album-app', p => setUploadProgress(p))
         const { data: photo } = await supabase.from('photos').insert({
           album_id: albumId, user_id: user.id, url: result.secure_url,
           cloudinary_id: result.public_id, width: result.width, height: result.height,
         }).select().single()
         if (photo) addPhoto(photo)
-      } catch (err) { console.error('Photo upload failed:', err) }
+      } catch (err) { console.error('Upload failed:', err) }
     }
     setUploadProgress(null)
   }, [albumId, addPhoto])
 
-  // ── Frame Management ────────────────────────────────────────────────────
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: onPhotoDrop,
+    accept: { 'image/*': [] },
+    multiple: true,
+  })
+
+  // ── Frame upload ─────────────────────────────────────────────────
   async function uploadFrame(file: File) {
-    console.log('uploadFrame start', file.name, file.type, file.size)
     setFrameUploading(true)
     try {
-      // Step 1: get user
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      console.log('user:', user?.id, 'userError:', userError)
-      if (!user) {
-        console.log('STOPPED: no user')
-        return
-      }
-
-      // Step 2: cloudinary upload
-      console.log('uploading to cloudinary...')
-      const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
-      const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
-      console.log('cloud name:', CLOUD_NAME, 'preset:', UPLOAD_PRESET)
-
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('upload_preset', UPLOAD_PRESET!)
+      formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
       formData.append('folder', 'photo-album-app/frames')
-
-      const cloudRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-        { method: 'POST', body: formData }
-      )
-      const cloudData = await cloudRes.json()
-      console.log('cloudinary response:', cloudData)
-
-      if (!cloudData.secure_url) {
-        console.log('STOPPED: no secure_url from cloudinary', cloudData)
-        return
-      }
-
-      // Step 3: save to supabase
-      const name = file.name.replace(/\.[^/.]+$/, '')
-      const url = cloudData.secure_url
-      console.log('inserting to supabase:', { user_id: user.id, name, url, cloudinary_id: cloudData.public_id })
-
-      const { data: saved, error: insertError } = await supabase
-        .from('frames')
-        .insert({
-          user_id: user.id,
-          name,
-          url,
-          cloudinary_id: cloudData.public_id,
-          width: cloudData.width,
-          height: cloudData.height,
-          album_id: null,
-        })
-        .select()
-        .single()
-
-      console.log('supabase insert result - saved:', saved, 'error:', insertError)
-
-      if (insertError) {
-        console.log('STOPPED: supabase insert failed', insertError)
-        return
-      }
-
-      // Step 4: update store
-      console.log('calling addFrame with:', saved)
-      addFrame(saved)
-      console.log('addFrame called, frames should update')
-
-    } catch (err) {
-      console.error('uploadFrame caught error:', err)
-    } finally {
-      setFrameUploading(false)
-      console.log('uploadFrame done')
-    }
-  }
-
-  function addFrameToCanvas(url: string) {
-    addElement(currentPageIndex, {
-      id: crypto.randomUUID(), type: 'frame', url,
-      x: 200, y: 150, width: 300, height: 300, rotation: 0
-    })
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: formData })
+      const cloudData = await res.json()
+      if (!cloudData.secure_url) return
+      const { data: saved } = await supabase.from('frames').insert({
+        user_id: user.id, name: file.name.replace(/\.[^/.]+$/, ''),
+        url: cloudData.secure_url, cloudinary_id: cloudData.public_id,
+        width: cloudData.width, height: cloudData.height, album_id: null,
+      }).select().single()
+      if (saved) addFrame(saved)
+    } catch (err) { console.error('Frame upload error:', err) }
+    setFrameUploading(false)
   }
 
   async function deleteFrame(id: string) {
-    const { error } = await supabase
-      .from('frames')
-      .delete()
-      .eq('id', id)
-
-    if (!error) removeFrame(id)
+    await supabase.from('frames').delete().eq('id', id)
+    removeFrame(id)
   }
 
-  const {
-    getRootProps: getPhotoRootProps,
-    getInputProps: getPhotoInputProps,
-    isDragActive: isPhotoDragActive,
-  } = useDropzone({ onDrop: onPhotoDrop, accept: { 'image/*': [] }, multiple: true })
-
-  // ── AI generate fresh layout ─────────────────────────────────────────────
-  async function generateAILayout() {
-    if (photos.length === 0) { alert('Upload some photos first!'); return }
-    setAiLoading(true)
-    setShowAiPanel(false)
+  // ── AI Generate ──────────────────────────────────────────────────
+  async function generateAILayout(prompt: string) {
+    if (photos.length === 0) return
+    setAiGenerating(true)
+    setShowAIGenerate(false)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { alert('Please sign in again.'); return }
+      if (!session) return
       const res = await fetch('/api/ai-layout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
           photos: photos.map(p => ({ id: p.id, url: p.url, width: p.width, height: p.height })),
           pageCount: Math.max(Math.ceil(photos.length / 3), 1),
-          prompt: aiPrompt,
-          mode: 'generate',
+          prompt, mode: 'generate',
         }),
       })
       const { pages } = await res.json()
       if (pages && album) { setAlbum({ ...album, pages }); setIsDirty(true) }
-    } catch (err) { console.error('AI layout failed:', err) }
-    setAiLoading(false)
+    } catch (err) { console.error('AI generate error:', err) }
+    setAiGenerating(false)
   }
 
-  // ── AI refine current layout (preserve photo positions) ──────────────────
+  // ── AI Refine ────────────────────────────────────────────────────
   async function refineWithAI(prompt: string) {
-    if (!album || album.pages.length === 0) return
+    if (!album) return
     setAiRefining(true)
-    setShowAiRefine(false)
+    setShowAIRefine(false)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { alert('Please sign in again.'); return }
+      if (!session) return
       const res = await fetch('/api/ai-layout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
-          mode: 'refine',
-          prompt,
+          mode: 'refine', prompt,
           currentPages: album.pages,
-          // photos array still needed for rate-limit bypass — send minimal list
           photos: photos.map(p => ({ id: p.id, url: p.url, width: p.width, height: p.height })),
           pageCount: album.pages.length,
         }),
       })
       const { pages } = await res.json()
       if (pages && album) { setAlbum({ ...album, pages }); setIsDirty(true) }
-    } catch (err) { console.error('AI refine failed:', err) }
+    } catch (err) { console.error('AI refine error:', err) }
     setAiRefining(false)
   }
 
-  async function refineCanvasWithAI() {
-    if (!album || !refinePrompt.trim()) return
-    setRefineLoading(true)
-    setRefineModalOpen(false)
-
-    const currentPage = album.pages[currentPageIndex]
-    const elements = currentPage.elements
-
-
-
-    try {
-      const res = await fetch('/api/refine-layout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          elements,
-          prompt: refinePrompt,
-        }),
-      })
-
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Refine failed')
-      const updatedElements = data.elements
-
-      const updatedPages = album.pages.map((page, i) =>
-        i === currentPageIndex
-          ? { ...page, elements: updatedElements }
-          : page
-      )
-      setAlbum({ ...album, pages: updatedPages })
-      setIsDirty(true)
-    } catch (err) {
-      console.error('Refine failed:', err)
-      alert('Refine failed. Check console for details.')
-    } finally {
-      setRefineLoading(false)
-      setRefinePrompt('')
-    }
-  }
-
-  // ── Set cover photo ──────────────────────────────────────────────────────
-  async function setCoverPhoto(photo: Photo) {
-    if (!album) return
-    setAlbum({ ...album, cover_url: photo.url })
-    await supabase.from('albums').update({ cover_url: photo.url }).eq('id', albumId)
-  }
-
-  // ── PDF Export ───────────────────────────────────────────────────────────
+  // ── PDF Export ────────────────────────────────────────────────────
   async function doExportPDF(format: PrintFormat, bleed: boolean) {
     const { default: jsPDF } = await import('jspdf')
     const { default: html2canvas } = await import('html2canvas')
     const canvasEl = document.getElementById('album-canvas-stage')
     if (!canvasEl) return
-    const formatDims: Record<PrintFormat, [number, number, 'landscape' | 'portrait']> = {
+    const dims: Record<PrintFormat, [number, number, 'landscape' | 'portrait']> = {
       'a4-landscape': [297, 210, 'landscape'],
       'a4-portrait': [210, 297, 'portrait'],
       'square': [210, 210, 'portrait'],
     }
-    const [pW, pH, ori] = formatDims[format]
+    const [pW, pH, ori] = dims[format]
     const pdf = new jsPDF({ orientation: ori, unit: 'mm', format: [pW, pH] })
     for (let i = 0; i < (album?.pages.length || 0); i++) {
       setCurrentPageIndex(i)
@@ -519,341 +566,642 @@ export default function AlbumEditorPage() {
       const canvas = await html2canvas(canvasEl, { scale: 2, useCORS: true })
       const imgData = canvas.toDataURL('image/jpeg', 0.95)
       if (i > 0) pdf.addPage([pW, pH], ori)
-      const bleedMm = bleed ? 3 : 0
-      pdf.addImage(imgData, 'JPEG', -bleedMm, -bleedMm, pW + bleedMm * 2, pH + bleedMm * 2)
+      const bMm = bleed ? 3 : 0
+      pdf.addImage(imgData, 'JPEG', -bMm, -bMm, pW + bMm * 2, pH + bMm * 2)
     }
     pdf.save(`${album?.title || 'album'}.pdf`)
   }
 
+  // ── Set cover ─────────────────────────────────────────────────────
+  async function setCoverPhoto(photo: Photo) {
+    if (!album) return
+    setAlbum({ ...album, cover_url: photo.url })
+    await supabase.from('albums').update({ cover_url: photo.url }).eq('id', albumId)
+  }
+
+  // ── Background update ─────────────────────────────────────────────
+  function updatePageBg(color: string) {
+    if (!album) return
+    const pages = album.pages.map((p, i) =>
+      i === currentPageIndex ? { ...p, background: color } : p
+    )
+    setAlbum({ ...album, pages })
+    setIsDirty(true)
+  }
+
+  // ── Add text ──────────────────────────────────────────────────────
+  function addTextElement() {
+    addElement(currentPageIndex, {
+      id: crypto.randomUUID(), type: 'text',
+      text: 'Your caption here',
+      x: 80, y: 480, width: 320, height: 30,
+      fontSize: 18, fill: 'var(--text-primary)',
+      fontFamily: 'Georgia, serif', fontStyle: 'italic',
+      align: 'left', lineHeight: 1.5, rotation: 0,
+    })
+  }
+
+  const isAnyAILoading = aiGenerating || aiRefining
+  const currentPage = album?.pages[currentPageIndex]
+
   if (!album) return (
-    <div style={{ background: '#0e0e0e', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', fontFamily: 'DM Sans, sans-serif' }}>
-      Loading…
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--bg-primary)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'column', gap: '16px',
+    }}>
+      <div className="spinner" style={{ width: '24px', height: '24px' }} />
+      <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>Loading album…</p>
     </div>
   )
 
-  const navBtnBase: React.CSSProperties = {
-    background: '#1a1a1a', border: '1px solid #333', color: '#f5f0e8',
-    padding: '8px 16px', borderRadius: '4px', cursor: 'pointer',
-    fontFamily: 'DM Sans, sans-serif', fontSize: '13px',
-  }
-
-  const isLoading = aiLoading || aiRefining
-
   return (
-    <div style={{ background: '#0a0a0a', minHeight: '100vh', color: '#f5f0e8', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
 
-      {/* ── Header ── */}
-      <div style={{ background: '#111', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', flexShrink: 0, flexWrap: 'wrap' }}>
-        <button onClick={() => router.push('/dashboard')}
-          style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '20px', padding: '4px' }}>
-          ←
-        </button>
+      {/* ══════════════════ TOP BAR ══════════════════ */}
+      <div className="editor-topbar">
+        {/* Left group */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '0 8px', borderRight: '1px solid var(--border)' }}>
+          <button
+            className="btn btn-icon"
+            onClick={() => router.push('/dashboard')}
+            style={{ gap: '4px', color: 'var(--text-secondary)', width: '36px', height: '36px' }}
+          >
+            <Icon.ArrowLeft />
+          </button>
 
-        {editingTitle ? (
-          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => { updateTitle(title); setEditingTitle(false) }}
-            onKeyDown={(e) => { if (e.key === 'Enter') { updateTitle(title); setEditingTitle(false) } }}
-            style={{ background: '#1a1a1a', border: '1px solid #d48c3a', color: '#f5f0e8', padding: '6px 12px', borderRadius: '4px', fontFamily: 'Playfair Display, serif', fontSize: '18px', outline: 'none', width: '280px' }} />
-        ) : (
-          <h1 onClick={() => setEditingTitle(true)}
-            style={{ fontFamily: 'Playfair Display, serif', fontSize: '18px', fontWeight: 400, cursor: 'pointer', padding: '6px 12px', borderRadius: '4px', border: '1px solid transparent' }}>
-            {title}
-          </h1>
-        )}
+          {/* Logo */}
+          <div style={{
+            width: '26px', height: '26px',
+            background: 'var(--accent)',
+            borderRadius: '6px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginLeft: '4px',
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="3" width="8" height="11" rx="1.5" fill="#0a0a0a"/>
+              <rect x="13" y="3" width="8" height="5" rx="1.5" fill="#0a0a0a" opacity="0.8"/>
+              <rect x="13" y="10" width="8" height="11" rx="1.5" fill="#0a0a0a" opacity="0.6"/>
+            </svg>
+          </div>
+        </div>
+
+        {/* Title */}
+        <div style={{ padding: '0 12px', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>
+          {editingTitle ? (
+            <input
+              autoFocus
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onBlur={() => { updateTitle(title); setEditingTitle(false) }}
+              onKeyDown={e => { if (e.key === 'Enter') { updateTitle(title); setEditingTitle(false) } }}
+              style={{
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--accent)',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-display)',
+                fontSize: '15px',
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-sm)',
+                outline: 'none',
+                width: '200px',
+              }}
+            />
+          ) : (
+            <button
+              onClick={() => setEditingTitle(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-display)',
+                fontSize: '15px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'background var(--transition-fast)',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+            >
+              {title}
+            </button>
+          )}
+        </div>
+
+        {/* Undo */}
+        <div style={{ padding: '0 8px', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>
+          <button
+            className="btn btn-icon tooltip"
+            data-tip="Undo (Ctrl+Z)"
+            onClick={undo}
+            style={{ width: '34px', height: '34px' }}
+          >
+            <Icon.Undo />
+          </button>
+        </div>
 
         <div style={{ flex: 1 }} />
 
-        <button onClick={() => setShowTemplates(true)} style={navBtnBase}>🗂 Templates</button>
-
-        {/* AI Refine — only shown when album has pages with content */}
-        {album.pages.some(p => p.elements.length > 0) && (
-          <button onClick={() => setShowAiRefine(true)} disabled={isLoading}
-            style={{ ...navBtnBase, color: '#b87a30', borderColor: '#3a2a1a', background: '#1a1200', opacity: isLoading ? 0.6 : 1, cursor: isLoading ? 'not-allowed' : 'pointer' }}>
-            {aiRefining ? '✨ Refining…' : '✨ Refine'}
+        {/* AI Tools */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 10px', borderRight: '1px solid var(--border)' }}>
+          <button
+            className="btn btn-ai btn-sm"
+            onClick={() => setShowAIGenerate(true)}
+            disabled={isAnyAILoading || photos.length === 0}
+            style={{ gap: '6px' }}
+          >
+            {aiGenerating ? <span className="spinner" style={{ width: '11px', height: '11px', borderTopColor: 'var(--accent)' }} /> : <Icon.Sparkle />}
+            {aiGenerating ? 'Generating…' : 'AI Layout'}
           </button>
-        )}
 
-        <button onClick={() => setShowAiPanel(true)} disabled={isLoading}
-          style={{ ...navBtnBase, color: '#d48c3a', opacity: isLoading ? 0.6 : 1, cursor: isLoading ? 'not-allowed' : 'pointer' }}>
-          {aiLoading ? '✨ Generating…' : '✨ AI Style'}
-        </button>
+          {album.pages.some(p => p.elements.length > 0) && (
+            <button
+              className="btn btn-ai btn-sm"
+              onClick={() => setShowAIRefine(true)}
+              disabled={isAnyAILoading}
+              style={{ gap: '6px' }}
+            >
+              {aiRefining ? <span className="spinner" style={{ width: '11px', height: '11px', borderTopColor: 'var(--accent)' }} /> : <Icon.Sparkle />}
+              {aiRefining ? 'Refining…' : 'AI Restyle'}
+            </button>
+          )}
+        </div>
 
-        <button onClick={() => setRefineModalOpen(true)} disabled={refineLoading}
-          style={{ background: '#1a1a1a', border: '1px solid #333', color: '#a78bfa',
-            padding: '8px 16px', borderRadius: '4px', cursor: refineLoading ? 'not-allowed' : 'pointer',
-            fontFamily: 'DM Sans, sans-serif', fontSize: '13px', opacity: refineLoading ? 0.6 : 1 }}>
-          {refineLoading ? '✨ Refining…' : '✨ Refine'}
-        </button>
+        {/* Right actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowExport(true)}
+            style={{ gap: '6px', color: 'var(--text-secondary)' }}
+          >
+            <Icon.Download /> Export PDF
+          </button>
 
-        <button onClick={() => setShowPrintModal(true)} style={navBtnBase}>↓ Export PDF</button>
+          <button
+            className={`btn btn-sm ${isDirty ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={saveAlbum}
+            disabled={saving || !isDirty}
+            style={{ gap: '6px', minWidth: '80px' }}
+          >
+            {saving
+              ? <span className="spinner" style={{ width: '11px', height: '11px', borderTopColor: isDirty ? '#0a0a0a' : 'var(--accent)' }} />
+              : isDirty
+              ? <><Icon.Save /> Save</>
+              : <><Icon.Check /> Saved</>
+            }
+          </button>
 
-        <button onClick={saveAlbum} disabled={saving || !isDirty}
-          style={{ background: isDirty ? '#d48c3a' : '#1a1a1a', color: isDirty ? '#0e0e0e' : '#444', border: 'none', padding: '8px 20px', borderRadius: '4px', cursor: !isDirty ? 'default' : 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, fontSize: '13px' }}>
-          {saving ? 'Saving…' : isDirty ? 'Save' : 'Saved ✓'}
-        </button>
+          <button
+            className="btn btn-icon"
+            onClick={toggle}
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            {theme === 'dark' ? <Icon.Sun /> : <Icon.Moon />}
+          </button>
+        </div>
       </div>
 
-      {/* ── AI Generate Modal ── */}
-      {showAiPanel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={() => setShowAiPanel(false)}>
-          <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '40px', width: '100%', maxWidth: '560px' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '26px', fontWeight: 400, marginBottom: '8px', color: '#f5f0e8' }}>
-              Describe your album
-            </h2>
-            <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '13px', marginBottom: '24px', lineHeight: 1.6 }}>
-              Describe any style, mood, or aesthetic. Claude will generate a complete fresh layout.
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
-              {[
-                '1970s Italian summer, warm film, handwritten feel',
-                'Dark moody wedding, black backgrounds, gold accents',
-                'Minimal Japanese style, white space, small clean text',
-                'Vibrant travel diary, bright colors, adventurous energy',
-                'Elegant black and white, cinematic, dramatic shadows',
-              ].map(example => (
-                <button key={example} onClick={() => setAiPrompt(example)}
-                  style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#777', padding: '6px 12px', borderRadius: '20px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '12px' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#d48c3a'; e.currentTarget.style.color = '#d48c3a' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#2a2a2a'; e.currentTarget.style.color = '#777' }}>
-                  {example}
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={aiPrompt} onChange={e => setAiPrompt(e.target.value)}
-              placeholder="e.g. A romantic Parisian honeymoon — soft pinks and creams, elegant serif fonts..."
-              rows={4}
-              style={{ width: '100%', background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#f5f0e8', padding: '14px', borderRadius: '8px', fontFamily: 'DM Sans, sans-serif', fontSize: '14px', outline: 'none', resize: 'vertical', lineHeight: 1.6, marginBottom: '20px', boxSizing: 'border-box' }}
-              onFocus={e => e.target.style.borderColor = '#d48c3a'}
-              onBlur={e => e.target.style.borderColor = '#2a2a2a'}
-            />
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowAiPanel(false)}
-                style={{ background: 'none', border: '1px solid #2a2a2a', color: '#555', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '14px' }}>
-                Cancel
-              </button>
-              <button onClick={generateAILayout} disabled={aiLoading}
-                style={{ background: '#d48c3a', border: 'none', color: '#0e0e0e', padding: '10px 28px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, fontSize: '14px', opacity: aiLoading ? 0.6 : 1 }}>
-                {aiLoading ? '✨ Generating…' : '✨ Generate Album'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ══════════════════ BODY ══════════════════ */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
-      {/* ── Body ── */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* ── Left sidebar: Pages ── */}
+        <div className="editor-sidebar-left" style={{ padding: '12px 8px', gap: '8px' }}>
+          <p className="label" style={{ textAlign: 'center', padding: '0 4px', marginBottom: '4px' }}>Pages</p>
 
-        {/* Page Sidebar */}
-        <div style={{ width: '140px', background: '#0f0f0f', borderRight: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', padding: '16px 12px', gap: '10px', overflowY: 'auto', flexShrink: 0 }}>
-          <p style={{ color: '#444', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'DM Sans, sans-serif', marginBottom: '4px' }}>Pages</p>
           {album.pages.map((page, i) => (
-            <div key={page.id} onClick={() => setCurrentPageIndex(i)}
-              style={{ background: i === currentPageIndex ? '#d48c3a' : '#1a1a1a', borderRadius: '4px', padding: '8px', cursor: 'pointer', aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-              <span style={{ fontSize: '11px', color: i === currentPageIndex ? '#0e0e0e' : '#444', fontFamily: 'DM Sans, sans-serif' }}>{i + 1}</span>
-              {album.pages.length > 1 && (
-                <button onClick={(e) => { e.stopPropagation(); deletePage(i) }}
-                  style={{ position: 'absolute', top: '2px', right: '4px', background: 'none', border: 'none', color: i === currentPageIndex ? '#0e0e0e' : '#555', cursor: 'pointer', fontSize: '12px', padding: '0', lineHeight: 1 }}>×</button>
-              )}
+            <div
+              key={page.id}
+              className={`page-thumb ${i === currentPageIndex ? 'active' : ''}`}
+              onClick={() => setCurrentPageIndex(i)}
+            >
+              <div style={{
+                width: '100%',
+                height: '100%',
+                background: page.background,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+              }}>
+                <span style={{
+                  fontSize: '11px',
+                  color: i === currentPageIndex ? 'var(--accent)' : 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                }}>
+                  {i + 1}
+                </span>
+                {album.pages.length > 1 && (
+                  <button
+                    onClick={e => { e.stopPropagation(); deletePage(i) }}
+                    style={{
+                      position: 'absolute',
+                      top: '3px', right: '3px',
+                      background: 'var(--bg-elevated)',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      width: '16px', height: '16px',
+                      borderRadius: '50%',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: 0,
+                      transition: 'opacity var(--transition-fast)',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                    onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
           ))}
-          <button onClick={addPage}
-            style={{ background: 'none', border: '1px dashed #2a2a2a', color: '#444', borderRadius: '4px', padding: '8px', cursor: 'pointer', fontSize: '18px', aspectRatio: '4/3' }}>
+
+          <button
+            onClick={addPage}
+            style={{
+              aspectRatio: '4/3',
+              background: 'none',
+              border: '1.5px dashed var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'border-color var(--transition-fast), color var(--transition-fast)',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+          >
             +
           </button>
         </div>
 
-        {/* Canvas Area */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', padding: '32px', overflow: 'hidden', minWidth: 0 }}>
+        {/* ── Canvas Area ── */}
+        <div className="editor-canvas-area">
           <AlbumCanvas />
         </div>
 
-        {/* Right Panel — Photos / Frames tabs */}
-        <div style={{ width: '180px', background: '#0f0f0f', borderLeft: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
-
+        {/* ── Right Panel ── */}
+        <div className="editor-sidebar-right">
           {/* Tab bar */}
-          <div style={{ display: 'flex', borderBottom: '1px solid #1a1a1a' }}>
-            {(['photos', 'frames'] as const).map(tab => (
-              <button key={tab} onClick={() => setRightTab(tab)}
-                style={{
-                  flex: 1, background: 'none', border: 'none',
-                  borderBottom: rightTab === tab ? '2px solid #d48c3a' : '2px solid transparent',
-                  color: rightTab === tab ? '#d48c3a' : '#444',
-                  padding: '10px 0', cursor: 'pointer',
-                  fontFamily: 'DM Sans, sans-serif', fontSize: '12px',
-                  textTransform: 'capitalize',
-                }}>
-                {tab}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            {RIGHT_TABS.map(tab => (
+              <button
+                key={tab.id}
+                className={`panel-tab ${rightTab === tab.id ? 'active' : ''}`}
+                onClick={() => setRightTab(tab.id)}
+                title={tab.label}
+              >
+                <div style={{ marginBottom: '2px' }}>{tab.icon}</div>
+                <span style={{ fontSize: '9px', letterSpacing: '0.05em', display: 'block' }}>{tab.label}</span>
               </button>
             ))}
           </div>
 
-          {/* ── Photos tab ── */}
-          {rightTab === 'photos' && (
-            <>
-              <div style={{ padding: '12px', borderBottom: '1px solid #1a1a1a' }}>
-                <div {...getPhotoRootProps()} style={{ border: `2px dashed ${isPhotoDragActive ? '#d48c3a' : '#2a2a2a'}`, borderRadius: '6px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', background: isPhotoDragActive ? '#1a1200' : 'transparent' }}>
-                  <input {...getPhotoInputProps()} />
-                  {uploadProgress !== null ? (
-                    <div>
-                      <div style={{ height: '4px', background: '#1a1a1a', borderRadius: '2px', overflow: 'hidden', marginBottom: '6px' }}>
-                        <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#d48c3a', borderRadius: '2px', transition: 'width 0.2s ease' }} />
+          {/* Tab content */}
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+            {/* Photos tab */}
+            {rightTab === 'photos' && (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                {/* Upload dropzone */}
+                <div style={{ padding: '10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                  <div
+                    {...getRootProps()}
+                    className={`dropzone ${isDragActive ? 'active' : ''}`}
+                    style={{ padding: '12px 8px' }}
+                  >
+                    <input {...getInputProps()} />
+                    {uploadProgress !== null ? (
+                      <div>
+                        <div className="progress-bar" style={{ marginBottom: '6px' }}>
+                          <div className="progress-bar-fill" style={{ width: `${uploadProgress}%` }} />
+                        </div>
+                        <p style={{ fontSize: '11px', color: 'var(--accent)', textAlign: 'center', fontFamily: 'var(--font-body)' }}>
+                          Uploading {uploadProgress}%
+                        </p>
                       </div>
-                      <p style={{ color: '#d48c3a', fontSize: '11px', fontFamily: 'DM Sans, sans-serif' }}>{uploadProgress}%</p>
+                    ) : (
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          <Icon.Image />
+                        </div>
+                        <p style={{ fontSize: '12px', color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', lineHeight: 1.5, fontFamily: 'var(--font-body)' }}>
+                          {isDragActive ? 'Drop photos here' : 'Drop photos or click to upload'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Photo grid */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', alignContent: 'start' }}>
+                  {photos.length === 0 && (
+                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '24px 8px', color: 'var(--text-muted)', fontSize: '12px' }}>
+                      No photos yet
                     </div>
-                  ) : (
-                    <p style={{ color: isPhotoDragActive ? '#d48c3a' : '#444', fontSize: '12px', fontFamily: 'DM Sans, sans-serif', lineHeight: 1.5 }}>
-                      {isPhotoDragActive ? 'Drop here' : 'Drop photos\nor click'}
-                    </p>
                   )}
+                  {photos.map(photo => (
+                    <div
+                      key={photo.id}
+                      style={{ position: 'relative', aspectRatio: '1', borderRadius: 'var(--radius-sm)', overflow: 'hidden', cursor: 'grab' }}
+                    >
+                      <img
+                        src={photo.url}
+                        alt=""
+                        draggable
+                        onDragStart={e => {
+                          e.dataTransfer.setData('photoId', photo.id)
+                          e.dataTransfer.setData('photoUrl', photo.url)
+                          e.dataTransfer.setData('photoWidth', photo.width.toString())
+                          e.dataTransfer.setData('photoHeight', photo.height.toString())
+                          e.dataTransfer.setData('elementType', 'image')
+                        }}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                      <button
+                        title="Set as cover"
+                        onClick={() => setCoverPhoto(photo)}
+                        style={{
+                          position: 'absolute', inset: 0,
+                          background: 'rgba(0,0,0,0)',
+                          border: 'none',
+                          cursor: 'pointer',
+                          opacity: 0,
+                          transition: 'opacity var(--transition-fast), background var(--transition-fast)',
+                          fontSize: '10px',
+                          color: '#fff',
+                          fontFamily: 'var(--font-body)',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.45)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0)' }}
+                      >
+                        ⭐ Cover
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                {photos.map((photo) => (
-                  <div key={photo.id} style={{ position: 'relative', borderRadius: '3px', overflow: 'hidden', aspectRatio: '1' }}>
-                    <img src={photo.url} alt="" draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData('photoId', photo.id)
-                        e.dataTransfer.setData('photoUrl', photo.url)
-                        e.dataTransfer.setData('photoWidth', photo.width.toString())
-                        e.dataTransfer.setData('photoHeight', photo.height.toString())
-                        e.dataTransfer.setData('elementType', 'image')
-                      }}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'grab', display: 'block' }}
-                    />
-                    <button title="Set as album cover" onClick={() => setCoverPhoto(photo)}
-                      style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(14,14,14,0.85)', border: 'none', color: '#d48c3a', fontSize: '10px', fontFamily: 'DM Sans, sans-serif', padding: '3px 0', cursor: 'pointer', opacity: 0, transition: 'opacity 0.15s' }}
-                      onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                      onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>
-                      ⭐ Cover
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+            )}
 
-          {/* ── Frames tab ── */}
-          {rightTab === 'frames' && (
-            <>
-              <div style={{ padding: '12px', borderBottom: '1px solid #1a1a1a' }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={frameInputRef}
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      uploadFrame(e.target.files[0])
-                    }
-                  }}
-                />
-                <button
-                  onClick={() => frameInputRef.current?.click()}
-                  disabled={frameUploading}
-                  style={{
-                    width: '100%', background: '#1a1a1a', border: '1px dashed #d48c3a', color: '#d48c3a',
-                    padding: '12px 0', borderRadius: '6px', cursor: frameUploading ? 'not-allowed' : 'pointer',
-                    fontFamily: 'DM Sans, sans-serif', fontSize: '13px', textAlign: 'center'
-                  }}
-                >
-                  {frameUploading ? 'Uploading...' : '+ Upload Frame (PNG)'}
-                </button>
-              </div>
-
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', alignContent: 'start' }}>
-                {frames.length === 0 && !frameUploading && (
-                  <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px 8px' }}>
-                    <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '12px' }}>
-                      No frames yet.
-                    </p>
-                  </div>
-                )}
-                {frames.map((frame) => (
-                  <div key={frame.id}
-                    onClick={() => addFrameToCanvas(frame.url)}
-                    style={{
-                      position: 'relative', borderRadius: '4px', overflow: 'hidden', aspectRatio: '1',
-                      background: 'repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 0 0 / 12px 12px',
-                      cursor: 'pointer', border: '1px solid #2a2a2a',
-                    }}
-                    onMouseEnter={e => {
-                      const btn = e.currentTarget.querySelector('.delete-btn') as HTMLElement
-                      if (btn) btn.style.opacity = '1'
-                    }}
-                    onMouseLeave={e => {
-                      const btn = e.currentTarget.querySelector('.delete-btn') as HTMLElement
-                      if (btn) btn.style.opacity = '0'
-                    }}
+            {/* Frames tab */}
+            {rightTab === 'frames' && (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ padding: '10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={frameInputRef}
+                    style={{ display: 'none' }}
+                    onChange={e => e.target.files?.[0] && uploadFrame(e.target.files[0])}
+                  />
+                  <button
+                    className="btn btn-secondary"
+                    style={{ width: '100%', gap: '6px', borderStyle: 'dashed' }}
+                    onClick={() => frameInputRef.current?.click()}
+                    disabled={frameUploading}
                   >
-                    <img src={frame.url} alt={frame.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-                    <button
-                      className="delete-btn"
-                      title="Delete Frame"
-                      onClick={(e) => { e.stopPropagation(); deleteFrame(frame.id) }}
+                    {frameUploading ? <span className="spinner" style={{ width: '12px', height: '12px' }} /> : <Icon.Plus />}
+                    {frameUploading ? 'Uploading…' : 'Upload Frame (PNG)'}
+                  </button>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', alignContent: 'start' }}>
+                  {frames.length === 0 && !frameUploading && (
+                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '24px 8px', color: 'var(--text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
+                      Upload PNG overlays with transparency
+                    </div>
+                  )}
+                  {frames.map(frame => (
+                    <div
+                      key={frame.id}
+                      title={frame.name}
+                      draggable
+                      onDragStart={e => {
+                        e.dataTransfer.setData('frameId', frame.id)
+                        e.dataTransfer.setData('photoUrl', frame.url)
+                        e.dataTransfer.setData('photoWidth', frame.width.toString())
+                        e.dataTransfer.setData('photoHeight', frame.height.toString())
+                        e.dataTransfer.setData('elementType', 'frame')
+                      }}
                       style={{
-                        position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.7)',
-                        color: '#d48c3a', border: 'none', borderRadius: '50%', width: '20px', height: '20px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                        fontSize: '14px', lineHeight: 1, opacity: 0, transition: 'opacity 0.15s'
+                        position: 'relative',
+                        aspectRatio: '1',
+                        borderRadius: 'var(--radius-sm)',
+                        overflow: 'hidden',
+                        background: 'repeating-conic-gradient(var(--bg-tertiary) 0% 25%, var(--bg-elevated) 0% 50%) 0 0 / 12px 12px',
+                        border: '1px solid var(--border)',
+                        cursor: 'grab',
                       }}
                     >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                      <img src={frame.url} alt={frame.name} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteFrame(frame.id) }}
+                        style={{
+                          position: 'absolute', top: '4px', right: '4px',
+                          background: 'var(--bg-elevated)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--danger)',
+                          width: '20px', height: '20px',
+                          borderRadius: '50%',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          opacity: 0,
+                          transition: 'opacity var(--transition-fast)',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </>
-          )}
+            )}
+
+            {/* Text tab */}
+            {rightTab === 'text' && (
+              <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button
+                  className="btn btn-secondary"
+                  style={{ width: '100%', gap: '6px' }}
+                  onClick={addTextElement}
+                >
+                  <Icon.Plus /> Add Text Box
+                </button>
+
+                <div className="divider" />
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  Click <strong style={{ color: 'var(--text-secondary)' }}>Add Text Box</strong>, then select it on the canvas to edit content and formatting via the toolbar above.
+                </p>
+
+                <div style={{ marginTop: '8px' }}>
+                  <p className="label">Quick fonts</p>
+                  {[
+                    { name: 'Cormorant', font: 'Cormorant Garamond, serif' },
+                    { name: 'DM Sans', font: 'DM Sans, sans-serif' },
+                    { name: 'Georgia', font: 'Georgia, serif' },
+                    { name: 'Helvetica', font: 'Helvetica Neue, sans-serif' },
+                    { name: 'Courier', font: 'Courier New, monospace' },
+                  ].map(f => (
+                    <div key={f.name} style={{
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '14px',
+                      fontFamily: f.font,
+                      color: 'var(--text-secondary)',
+                      cursor: 'default',
+                      marginBottom: '2px',
+                      border: '1px solid transparent',
+                      transition: 'all var(--transition-fast)',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-tertiary)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.borderColor = 'transparent' }}
+                    >
+                      {f.name} — Aa
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Backgrounds tab */}
+            {rightTab === 'backgrounds' && currentPage && (
+              <div style={{ padding: '12px', overflow: 'auto', flex: 1 }}>
+                <p className="label">Current background</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    background: currentPage.background,
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border)',
+                    flexShrink: 0,
+                  }} />
+                  <input
+                    type="color"
+                    value={currentPage.background.startsWith('#') ? currentPage.background : '#0a0a0a'}
+                    onChange={e => updatePageBg(e.target.value)}
+                    style={{ flex: 1, height: '32px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer', background: 'none', padding: '2px' }}
+                  />
+                </div>
+
+                <p className="label">Solid colors</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
+                  {BG_PRESETS.map(color => (
+                    <button
+                      key={color}
+                      className="color-swatch"
+                      style={{ background: color, outline: currentPage.background === color ? '2px solid var(--accent)' : 'none', outlineOffset: '2px' }}
+                      onClick={() => updatePageBg(color)}
+                      title={color}
+                    />
+                  ))}
+                </div>
+
+                <p className="label">Gradient presets</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {GRADIENT_PRESETS.map((g, i) => (
+                    <button
+                      key={i}
+                      onClick={() => updatePageBg(`linear-gradient(${g.angle}deg, ${g.from}, ${g.to})`)}
+                      style={{
+                        height: '32px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border)',
+                        background: `linear-gradient(${g.angle}deg, ${g.from}, ${g.to})`,
+                        cursor: 'pointer',
+                        transition: 'transform var(--transition-fast)',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.transform = 'scaleY(1.06)')}
+                      onMouseLeave={e => (e.currentTarget.style.transform = 'scaleY(1)')}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Layouts tab */}
+            {rightTab === 'layouts' && (
+              <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  Use <strong style={{ color: 'var(--accent)' }}>✨ AI Layout</strong> to generate a full album from your photos, or <strong style={{ color: 'var(--accent)' }}>✨ AI Restyle</strong> to update the style while keeping your photo positions.
+                </p>
+
+                <div className="divider" />
+
+                <button
+                  className="btn btn-ai"
+                  style={{ width: '100%', gap: '8px', justifyContent: 'center' }}
+                  onClick={() => setShowAIGenerate(true)}
+                  disabled={isAnyAILoading || photos.length === 0}
+                >
+                  <Icon.Sparkle /> Generate Layout
+                </button>
+
+                {album.pages.some(p => p.elements.length > 0) && (
+                  <button
+                    className="btn btn-ai"
+                    style={{ width: '100%', gap: '8px', justifyContent: 'center' }}
+                    onClick={() => setShowAIRefine(true)}
+                    disabled={isAnyAILoading}
+                  >
+                    <Icon.Sparkle /> Restyle Album
+                  </button>
+                )}
+
+                {photos.length === 0 && (
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                    Upload photos first to use AI layout generation.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Modals ── */}
-      {showPrintModal && (
-        <PrintPreviewModal onClose={() => setShowPrintModal(false)} onDownload={doExportPDF} />
-      )}
-      {showTemplates && (
-        <TemplatesModal onClose={() => setShowTemplates(false)} />
-      )}
-      {showAiRefine && (
-        <AIRefineModal
-          onClose={() => setShowAiRefine(false)}
-          onRefine={refineWithAI}
-          refining={aiRefining}
+      {/* ══════════════════ STATUS BAR ══════════════════ */}
+      <div className="editor-statusbar">
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          Page {currentPageIndex + 1} / {album.pages.length}
+        </span>
+        <div style={{ width: '1px', height: '12px', background: 'var(--border)' }} />
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          Drag photos from panel to canvas
+        </span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          ⌘S Save · ⌘Z Undo · Del Remove
+        </span>
+      </div>
+
+      {/* ══════════════════ MODALS ══════════════════ */}
+      {showAIGenerate && (
+        <AIGenerateModal
+          onClose={() => setShowAIGenerate(false)}
+          onGenerate={generateAILayout}
+          loading={aiGenerating}
         />
       )}
-      {refineModalOpen && (
-        <div onClick={() => setRefineModalOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#111', border: '1px solid #222', borderRadius: '8px', padding: '32px', width: '100%', maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '24px', fontWeight: 400, color: '#f5f0e8', margin: 0 }}>Refine with AI</h2>
-            <p style={{ color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '13px', margin: 0 }}>Describe how to rearrange the elements on this page. Works on photos, frames, and text.</p>
-            <textarea
-              value={refinePrompt} onChange={(e) => setRefinePrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) refineCanvasWithAI() }}
-              placeholder="e.g. arrange 4 frames in a 2x2 equal grid with 20px gaps"
-              rows={3}
-              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#f5f0e8',
-                padding: '12px', borderRadius: '4px', fontFamily: 'DM Sans, sans-serif',
-                fontSize: '14px', outline: 'none', resize: 'none' }}
-            />
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setRefineModalOpen(false)}
-                style={{ background: 'none', border: '1px solid #333', color: '#666',
-                  padding: '8px 16px', borderRadius: '4px', cursor: 'pointer',
-                  fontFamily: 'DM Sans, sans-serif', fontSize: '13px' }}>
-                Cancel
-              </button>
-              <button onClick={refineCanvasWithAI} disabled={!refinePrompt.trim()}
-                style={{ background: '#a78bfa', border: 'none', color: '#0e0e0e',
-                  padding: '8px 20px', borderRadius: '4px', cursor: 'pointer',
-                  fontFamily: 'DM Sans, sans-serif', fontWeight: 500, fontSize: '13px',
-                  opacity: refinePrompt.trim() ? 1 : 0.4 }}>
-                Refine
-              </button>
-            </div>
-          </div>
-        </div>
+      {showAIRefine && (
+        <AIRefineModal
+          onClose={() => setShowAIRefine(false)}
+          onRefine={refineWithAI}
+          loading={aiRefining}
+        />
+      )}
+      {showExport && (
+        <ExportModal
+          onClose={() => setShowExport(false)}
+          onExport={doExportPDF}
+        />
       )}
     </div>
   )

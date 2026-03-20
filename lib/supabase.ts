@@ -17,6 +17,7 @@ export type PageElement = {
   fontFamily?: string; fontStyle?: string
   align?: 'left' | 'center' | 'right'; lineHeight?: number
   x: number; y: number; width: number; height: number; rotation: number
+  opacity?: number
 }
 export type Photo = {
   id: string; album_id: string | null; user_id: string

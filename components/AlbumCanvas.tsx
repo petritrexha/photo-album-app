@@ -5,29 +5,28 @@ import useImage from 'use-image'
 import { useAlbumStore } from '@/lib/store'
 import type { PageElement } from '@/lib/supabase'
 
-const CANVAS_WIDTH = 800
+const CANVAS_WIDTH  = 800
 const CANVAS_HEIGHT = 600
 
 const FONTS = [
-  { label: 'Playfair', value: 'Playfair Display, serif' },
-  { label: 'Modern', value: 'DM Sans, sans-serif' },
-  { label: 'Classic', value: 'Georgia, serif' },
-  { label: 'Clean', value: 'Helvetica Neue, sans-serif' },
-  { label: 'Mono', value: 'Courier New, monospace' },
-  { label: 'Script', value: 'Palatino Linotype, serif' },
+  { label: 'Cormorant',  value: 'Cormorant Garamond, serif' },
+  { label: 'Playfair',   value: 'Playfair Display, serif' },
+  { label: 'DM Sans',    value: 'DM Sans, sans-serif' },
+  { label: 'Georgia',    value: 'Georgia, serif' },
+  { label: 'Helvetica',  value: 'Helvetica Neue, sans-serif' },
+  { label: 'Courier',    value: 'Courier New, monospace' },
 ]
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
+// ── PhotoElement ───────────────────────────────────────────────────
 function PhotoElement({ element, isSelected, onSelect, onUpdate }: {
   element: PageElement
   isSelected: boolean
   onSelect: () => void
-  onUpdate: (updates: Partial<PageElement>) => void
+  onUpdate: (u: Partial<PageElement>) => void
 }) {
   const [image] = useImage(element.url || '', 'anonymous')
   const shapeRef = useRef<any>(null)
-  const trRef = useRef<any>(null)
+  const trRef    = useRef<any>(null)
 
   useEffect(() => {
     if (isSelected && trRef.current && shapeRef.current) {
@@ -44,36 +43,49 @@ function PhotoElement({ element, isSelected, onSelect, onUpdate }: {
         x={element.x} y={element.y}
         width={element.width} height={element.height}
         rotation={element.rotation}
+        opacity={element.opacity ?? 1}
         draggable
-        onClick={onSelect} onTap={onSelect}
-        onDragEnd={(e) => onUpdate({ x: e.target.x(), y: e.target.y() })}
+        onClick={onSelect}
+        onTap={onSelect}
+        onDragEnd={e => onUpdate({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
-          const node = shapeRef.current
+          const n = shapeRef.current
           onUpdate({
-            x: node.x(), y: node.y(),
-            width: Math.max(40, node.width() * node.scaleX()),
-            height: Math.max(40, node.height() * node.scaleY()),
-            rotation: node.rotation(),
+            x: n.x(), y: n.y(),
+            width:  Math.max(20, n.width()  * n.scaleX()),
+            height: Math.max(20, n.height() * n.scaleY()),
+            rotation: n.rotation(),
           })
-          node.scaleX(1); node.scaleY(1)
+          n.scaleX(1); n.scaleY(1)
         }}
       />
       {isSelected && (
-        <Transformer ref={trRef} rotateEnabled keepRatio={false}
-          boundBoxFunc={(old, n) => n.width < 40 || n.height < 40 ? old : n} />
+        <Transformer
+          ref={trRef}
+          rotateEnabled
+          keepRatio={false}
+          borderStroke="var(--accent, #d48c3a)"
+          anchorFill="var(--bg-surface, #1c1c21)"
+          anchorStroke="var(--accent, #d48c3a)"
+          anchorStrokeWidth={1.5}
+          anchorSize={9}
+          anchorCornerRadius={2}
+          boundBoxFunc={(old, n) => (n.width < 20 || n.height < 20 ? old : n)}
+        />
       )}
     </>
   )
 }
 
+// ── TextElement ────────────────────────────────────────────────────
 function TextElement({ element, isSelected, onSelect, onUpdate }: {
   element: PageElement
   isSelected: boolean
   onSelect: () => void
-  onUpdate: (updates: Partial<PageElement>) => void
+  onUpdate: (u: Partial<PageElement>) => void
 }) {
   const shapeRef = useRef<any>(null)
-  const trRef = useRef<any>(null)
+  const trRef    = useRef<any>(null)
 
   useEffect(() => {
     if (isSelected && trRef.current && shapeRef.current) {
@@ -83,7 +95,7 @@ function TextElement({ element, isSelected, onSelect, onUpdate }: {
   }, [isSelected])
 
   const fontStyle = [
-    element.fontStyle?.includes('bold') ? 'bold' : '',
+    element.fontStyle?.includes('bold')   ? 'bold'   : '',
     element.fontStyle?.includes('italic') ? 'italic' : '',
   ].filter(Boolean).join(' ') || 'normal'
 
@@ -93,191 +105,190 @@ function TextElement({ element, isSelected, onSelect, onUpdate }: {
         ref={shapeRef}
         text={element.text || 'Double-click to edit'}
         x={element.x} y={element.y}
-        width={element.width || 300}
+        width={element.width || 280}
         fontSize={element.fontSize || 18}
-        fill={element.fill || '#333333'}
+        fill={element.fill || '#f4f0ea'}
         fontFamily={element.fontFamily || 'Georgia, serif'}
         fontStyle={fontStyle}
         textDecoration={element.fontStyle?.includes('underline') ? 'underline' : ''}
         align={element.align || 'left'}
         lineHeight={element.lineHeight || 1.4}
+        opacity={element.opacity ?? 1}
         draggable
-        onClick={onSelect} onTap={onSelect}
-        onDragEnd={(e) => onUpdate({ x: e.target.x(), y: e.target.y() })}
+        onClick={onSelect}
+        onTap={onSelect}
+        onDragEnd={e => onUpdate({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
-          const node = shapeRef.current
-          onUpdate({ x: node.x(), y: node.y(), width: node.width() * node.scaleX(), rotation: node.rotation() })
-          node.scaleX(1); node.scaleY(1)
+          const n = shapeRef.current
+          onUpdate({ x: n.x(), y: n.y(), width: n.width() * n.scaleX(), rotation: n.rotation() })
+          n.scaleX(1); n.scaleY(1)
         }}
       />
       {isSelected && (
-        <Transformer ref={trRef} rotateEnabled
-          enabledAnchors={['middle-left', 'middle-right']} />
+        <Transformer
+          ref={trRef}
+          rotateEnabled
+          enabledAnchors={['middle-left', 'middle-right']}
+          borderStroke="var(--accent, #d48c3a)"
+          anchorFill="var(--bg-surface, #1c1c21)"
+          anchorStroke="var(--accent, #d48c3a)"
+          anchorStrokeWidth={1.5}
+          anchorSize={9}
+          anchorCornerRadius={2}
+        />
       )}
     </>
   )
 }
 
-// ── Context Menu ───────────────────────────────────────────────────────────────
+// ── Context Menu ───────────────────────────────────────────────────
+type CtxMenu = { x: number; y: number; elementId: string } | null
 
-type ContextMenuState = { x: number; y: number; elementId: string } | null
-
-function ContextMenu({ menu, onDelete, onBringToFront, onSendToBack, onClose }: {
-  menu: ContextMenuState
+function ContextMenu({ menu, onDelete, onFront, onBack, onClose }: {
+  menu: CtxMenu
   onDelete: () => void
-  onBringToFront: () => void
-  onSendToBack: () => void
+  onFront: () => void
+  onBack: () => void
   onClose: () => void
 }) {
   useEffect(() => {
-    const handler = () => onClose()
-    window.addEventListener('click', handler)
-    return () => window.removeEventListener('click', handler)
-  }, [onClose])
+    if (!menu) return
+    const h = () => onClose()
+    window.addEventListener('click', h)
+    return () => window.removeEventListener('click', h)
+  }, [menu, onClose])
 
   if (!menu) return null
 
-  const menuStyle: React.CSSProperties = {
-    position: 'fixed',
-    left: menu.x,
-    top: menu.y,
-    background: '#111',
-    border: '1px solid #2a2a2a',
-    borderRadius: '6px',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-    zIndex: 1000,
-    overflow: 'hidden',
-    minWidth: '160px',
-  }
-
   const itemStyle: React.CSSProperties = {
-    display: 'block', width: '100%', textAlign: 'left', padding: '9px 16px',
-    background: 'none', border: 'none', color: '#f5f0e8', cursor: 'pointer',
-    fontFamily: 'DM Sans, sans-serif', fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    width: '100%',
+    padding: '8px 14px',
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-primary)',
+    fontSize: '12px',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-body)',
+    textAlign: 'left',
+    transition: 'background var(--transition-fast)',
   }
 
   return (
-    <div style={menuStyle} onClick={e => e.stopPropagation()}>
-      <button style={itemStyle}
-        onMouseEnter={e => (e.currentTarget.style.background = '#1a1a1a')}
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{
+        position: 'fixed',
+        left: menu.x,
+        top: menu.y,
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-lg)',
+        zIndex: 1000,
+        overflow: 'hidden',
+        minWidth: '160px',
+      }}
+    >
+      {[
+        { label: '↑ Bring to front', action: onFront },
+        { label: '↓ Send to back',   action: onBack },
+      ].map(item => (
+        <button
+          key={item.label}
+          style={itemStyle}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+          onClick={() => { item.action(); onClose() }}
+        >
+          {item.label}
+        </button>
+      ))}
+      <div style={{ height: '1px', background: 'var(--border)' }} />
+      <button
+        style={{ ...itemStyle, color: 'var(--danger)' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--danger-muted)')}
         onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-        onClick={() => { onBringToFront(); onClose() }}>
-        ↑ Bring to Front
-      </button>
-      <button style={itemStyle}
-        onMouseEnter={e => (e.currentTarget.style.background = '#1a1a1a')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-        onClick={() => { onSendToBack(); onClose() }}>
-        ↓ Send to Back
-      </button>
-      <div style={{ height: '1px', background: '#2a2a2a', margin: '2px 0' }} />
-      <button style={{ ...itemStyle, color: '#e05555' }}
-        onMouseEnter={e => (e.currentTarget.style.background = '#1a0a0a')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-        onClick={() => { onDelete(); onClose() }}>
+        onClick={() => { onDelete(); onClose() }}
+      >
         🗑 Delete
       </button>
     </div>
   )
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────────
-
+// ── Main AlbumCanvas ────────────────────────────────────────────────
 export default function AlbumCanvas() {
   const {
     album, currentPageIndex, selectedElementId, setSelectedElementId,
     addElement, updateElement, deleteElement, bringToFront, sendToBack,
   } = useAlbumStore()
 
-  const stageRef = useRef<any>(null)
+  const stageRef     = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [scale, setScale] = useState(1)
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
+  const [scale, setScale]         = useState(1)
+  const [contextMenu, setContextMenu] = useState<CtxMenu>(null)
 
   const currentPage = album?.pages[currentPageIndex]
 
-  // ── Responsive scaling ───────────────────────────────────────────────────
+  // ── Responsive scale ──────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return
-    const observer = new ResizeObserver(entries => {
+    const obs = new ResizeObserver(entries => {
       const w = entries[0].contentRect.width
-      if (w > 0) setScale(Math.min(w / CANVAS_WIDTH, 1))
+      const h = entries[0].contentRect.height
+      if (w > 0 && h > 0) {
+        const scaleW = w / CANVAS_WIDTH
+        const scaleH = h / CANVAS_HEIGHT
+        setScale(Math.min(scaleW, scaleH, 1))
+      }
     })
-    observer.observe(containerRef.current)
-    return () => observer.disconnect()
+    obs.observe(containerRef.current)
+    return () => obs.disconnect()
   }, [])
 
-  // ── Drop to canvas ───────────────────────────────────────────────────────
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+  // ── Drop ──────────────────────────────────────────────────────
+  function handleDrop(e: React.DragEvent) {
     e.preventDefault()
-    const elementType = e.dataTransfer.getData('elementType') || 'image'
+    const type    = e.dataTransfer.getData('elementType') || 'image'
     const photoId = e.dataTransfer.getData('photoId')
     const frameId = e.dataTransfer.getData('frameId')
-    const photoUrl = e.dataTransfer.getData('photoUrl')
-    const photoW = parseInt(e.dataTransfer.getData('photoWidth')) || 800
-    const photoH = parseInt(e.dataTransfer.getData('photoHeight')) || 600
-    const assetId = elementType === 'frame' ? frameId : photoId
-    if (!assetId || !stageRef.current) return
+    const url     = e.dataTransfer.getData('photoUrl')
+    const pW      = parseInt(e.dataTransfer.getData('photoWidth'))  || 800
+    const pH      = parseInt(e.dataTransfer.getData('photoHeight')) || 600
 
-    const stage = stageRef.current
-    stage.setPointersPositions(e.nativeEvent)
-    const pos = stage.getPointerPosition() || { x: 200, y: 150 }
-    // Frames default to full-canvas size (they're overlays); photos get capped at 350px
-    const maxW = elementType === 'frame' ? CANVAS_WIDTH : 350
-    const sc = Math.min(maxW / photoW, maxW / photoH, 1)
+    if (!stageRef.current) return
+    stageRef.current.setPointersPositions(e.nativeEvent)
+    const pos = stageRef.current.getPointerPosition() || { x: 200, y: 150 }
+
+    const isFrame = type === 'frame'
+    const maxW = isFrame ? CANVAS_WIDTH : 350
+    const sc = Math.min(maxW / pW, maxW / pH, 1)
 
     addElement(currentPageIndex, {
       id: crypto.randomUUID(),
-      type: elementType as 'image' | 'frame',
-      photoId: elementType === 'image' ? assetId : undefined,
-      frameId: elementType === 'frame' ? assetId : undefined,
-      url: photoUrl,
-      x: elementType === 'frame' ? 0 : pos.x - (photoW * sc) / 2,
-      y: elementType === 'frame' ? 0 : pos.y - (photoH * sc) / 2,
-      width: elementType === 'frame' ? CANVAS_WIDTH : Math.round(photoW * sc),
-      height: elementType === 'frame' ? CANVAS_HEIGHT : Math.round(photoH * sc),
+      type: isFrame ? 'frame' : 'image',
+      photoId: !isFrame ? (photoId || undefined) : undefined,
+      frameId: isFrame  ? (frameId || undefined) : undefined,
+      url,
+      x: isFrame ? 0 : pos.x / scale - (pW * sc) / 2,
+      y: isFrame ? 0 : pos.y / scale - (pH * sc) / 2,
+      width:  isFrame ? CANVAS_WIDTH : Math.round(pW * sc),
+      height: isFrame ? CANVAS_HEIGHT : Math.round(pH * sc),
       rotation: 0,
     })
   }
 
-  // ── Add text ─────────────────────────────────────────────────────────────
-  function addTextBox() {
-    addElement(currentPageIndex, {
-      id: crypto.randomUUID(), type: 'text',
-      text: 'Your caption here',
-      x: 100, y: CANVAS_HEIGHT - 100,
-      width: 300, height: 30,
-      fontSize: 18, fill: '#333333',
-      fontFamily: 'Georgia, serif', fontStyle: '',
-      align: 'left', lineHeight: 1.4, rotation: 0,
-    })
-  }
-
-  // ── Background ───────────────────────────────────────────────────────────
-  function updateBg(color: string) {
-    if (!album) return
-    const pages = album.pages.map((p, i) =>
-      i === currentPageIndex ? { ...p, background: color } : p
-    )
-    useAlbumStore.getState().setAlbum({ ...album, pages })
-    useAlbumStore.getState().setIsDirty(true)
-  }
-
-  // ── Context menu handlers ─────────────────────────────────────────────────
+  // ── Context menu ──────────────────────────────────────────────
   function handleContextMenu(e: any, elementId: string) {
     e.evt.preventDefault()
-    e.evt.stopPropagation()
-    const containerRect = containerRef.current?.getBoundingClientRect()
-    const stage = stageRef.current
-    if (!stage || !containerRect) return
-    const pointerPos = stage.getPointerPosition()
-    if (!pointerPos) return
+    const rect = containerRef.current?.getBoundingClientRect()
+    const pos  = stageRef.current?.getPointerPosition()
+    if (!rect || !pos) return
     setSelectedElementId(elementId)
-    setContextMenu({
-      x: containerRect.left + pointerPos.x * scale,
-      y: containerRect.top + pointerPos.y * scale,
-      elementId,
-    })
+    setContextMenu({ x: rect.left + pos.x * scale, y: rect.top + pos.y * scale, elementId })
   }
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
@@ -285,123 +296,224 @@ export default function AlbumCanvas() {
   if (!currentPage) return null
 
   const selectedEl = currentPage.elements.find(e => e.id === selectedElementId)
-  const isTextSelected = selectedEl?.type === 'text'
+  const isText     = selectedEl?.type === 'text'
+  const isImage    = selectedEl?.type === 'image' || selectedEl?.type === 'frame'
 
+  // ── Text style toggle ─────────────────────────────────────────
   function toggleStyle(style: string) {
     if (!selectedEl || !selectedElementId) return
-    const current = selectedEl.fontStyle || ''
-    const has = current.includes(style)
-    const next = has ? current.replace(style, '').trim() : (current + ' ' + style).trim()
+    const cur  = selectedEl.fontStyle || ''
+    const has  = cur.includes(style)
+    const next = has ? cur.replace(style, '').trim() : `${cur} ${style}`.trim()
     updateElement(currentPageIndex, selectedElementId, { fontStyle: next })
   }
 
-  const btnBase: React.CSSProperties = {
-    background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#f5f0e8',
-    padding: '6px 12px', borderRadius: '4px', cursor: 'pointer',
-    fontFamily: 'DM Sans, sans-serif', fontSize: '13px',
-  }
-  const btnActive: React.CSSProperties = {
-    ...btnBase, background: '#d48c3a', color: '#0e0e0e', border: '1px solid #d48c3a',
+  // ── Toolbar base style ────────────────────────────────────────
+  const tBtn: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '28px',
+  padding: '0 8px',
+  background: 'var(--bg-tertiary)',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: 'var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--text-secondary)',
+  fontSize: '12px',
+  fontFamily: 'var(--font-body)',
+  cursor: 'pointer',
+  transition: 'all var(--transition-fast)',
+  whiteSpace: 'nowrap' as const,
+}
+const tBtnActive: React.CSSProperties = {
+  ...tBtn,
+  background: 'var(--accent-muted)',
+  color: 'var(--accent)',
+  borderColor: 'transparent',
+}
+  const tSep: React.CSSProperties = {
+    width: '1px',
+    height: '20px',
+    background: 'var(--border)',
+    flexShrink: 0,
   }
 
-  const scaledW = Math.round(CANVAS_WIDTH * scale)
+  const scaledW = Math.round(CANVAS_WIDTH  * scale)
   const scaledH = Math.round(CANVAS_HEIGHT * scale)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: `${scaledW}px` }}>
+      {/* ── Canvas Toolbar ── */}
+      <div className="canvas-toolbar" style={{ overflowX: 'auto' }}>
 
-        <button onClick={addTextBox} style={btnBase}>+ Text</button>
+        {/* Global controls (always shown) */}
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '6px', flexShrink: 0, fontFamily: 'var(--font-mono)' }}>
+          {Math.round(scale * 100)}%
+        </span>
+        <div style={tSep} />
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#555', fontFamily: 'DM Sans, sans-serif', fontSize: '13px' }}>
-          BG:
-          <input type="color" defaultValue={currentPage.background}
-            onChange={(e) => updateBg(e.target.value)}
-            style={{ width: '28px', height: '26px', borderRadius: '3px', border: '1px solid #2a2a2a', cursor: 'pointer', background: 'none' }} />
-        </label>
-
-        {/* Text controls — only when text selected */}
-        {isTextSelected && selectedEl && selectedElementId && (
+        {/* Text-element controls */}
+        {isText && selectedEl && selectedElementId && (
           <>
-            <div style={{ width: '1px', height: '24px', background: '#2a2a2a' }} />
+            {/* Text input */}
+            <input
+              value={selectedEl.text || ''}
+              onChange={e => updateElement(currentPageIndex, selectedElementId, { text: e.target.value })}
+              placeholder="Text…"
+              style={{
+                ...tBtn,
+                width: '140px',
+                border: '1px solid var(--border-focus)',
+                color: 'var(--text-primary)',
+                background: 'var(--bg-tertiary)',
+                outline: 'none',
+                paddingLeft: '8px',
+                paddingRight: '8px',
+              }}
+            />
 
-            <input value={selectedEl.text || ''}
-              onChange={(e) => updateElement(currentPageIndex, selectedElementId, { text: e.target.value })}
-              style={{ ...btnBase, border: '1px solid #3a3a3a', width: '160px', outline: 'none' }}
-              placeholder="Edit text..." />
-
-            <select value={selectedEl.fontFamily || 'Georgia, serif'}
-              onChange={(e) => updateElement(currentPageIndex, selectedElementId, { fontFamily: e.target.value })}
-              style={{ ...btnBase, cursor: 'pointer' }}>
+            {/* Font family */}
+            <select
+              value={selectedEl.fontFamily || 'Georgia, serif'}
+              onChange={e => updateElement(currentPageIndex, selectedElementId, { fontFamily: e.target.value })}
+              style={{ ...tBtn, cursor: 'pointer', paddingRight: '4px' }}
+            >
               {FONTS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
 
-            <input type="number" value={selectedEl.fontSize || 18} min={8} max={120}
-              onChange={(e) => updateElement(currentPageIndex, selectedElementId, { fontSize: parseInt(e.target.value) })}
-              style={{ ...btnBase, width: '58px', outline: 'none' }} title="Font size" />
+            {/* Font size */}
+            <input
+              type="number"
+              value={selectedEl.fontSize || 18}
+              min={6} max={160}
+              onChange={e => updateElement(currentPageIndex, selectedElementId, { fontSize: parseInt(e.target.value) || 18 })}
+              style={{ ...tBtn, width: '52px', outline: 'none' }}
+            />
 
-            <input type="color" value={selectedEl.fill || '#333333'}
-              onChange={(e) => updateElement(currentPageIndex, selectedElementId, { fill: e.target.value })}
-              style={{ width: '28px', height: '26px', borderRadius: '3px', border: '1px solid #2a2a2a', cursor: 'pointer', background: 'none' }}
-              title="Text color" />
+            {/* Color */}
+            <input
+              type="color"
+              value={selectedEl.fill?.startsWith('#') ? selectedEl.fill : '#f4f0ea'}
+              onChange={e => updateElement(currentPageIndex, selectedElementId, { fill: e.target.value })}
+              style={{ width: '26px', height: '26px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: '2px', background: 'var(--bg-tertiary)' }}
+              title="Text color"
+            />
 
-            <button onClick={() => toggleStyle('bold')} style={selectedEl.fontStyle?.includes('bold') ? btnActive : btnBase}><b>B</b></button>
-            <button onClick={() => toggleStyle('italic')} style={selectedEl.fontStyle?.includes('italic') ? btnActive : btnBase}><i>I</i></button>
-            <button onClick={() => toggleStyle('underline')} style={selectedEl.fontStyle?.includes('underline') ? btnActive : btnBase}><u>U</u></button>
+            <div style={tSep} />
 
-            {(['left', 'center', 'right'] as const).map(a => (
-              <button key={a} onClick={() => updateElement(currentPageIndex, selectedElementId, { align: a })}
-                style={(selectedEl.align || 'left') === a ? btnActive : btnBase}>
-                {a === 'left' ? '⬛▪▪' : a === 'center' ? '▪⬛▪' : '▪▪⬛'}
+            {/* Bold / Italic / Underline */}
+            {[
+              { style: 'bold',      label: 'B', css: { fontWeight: 700 } },
+              { style: 'italic',    label: 'I', css: { fontStyle: 'italic' } },
+              { style: 'underline', label: 'U', css: { textDecoration: 'underline' } },
+            ].map(s => (
+              <button
+                key={s.style}
+                onClick={() => toggleStyle(s.style)}
+                style={{
+                  ...(selectedEl.fontStyle?.includes(s.style) ? tBtnActive : tBtn),
+                  ...s.css,
+                  width: '28px',
+                  padding: 0,
+                }}
+              >
+                {s.label}
               </button>
             ))}
 
-            <select value={selectedEl.lineHeight || 1.4}
-              onChange={(e) => updateElement(currentPageIndex, selectedElementId, { lineHeight: parseFloat(e.target.value) })}
-              style={{ ...btnBase, cursor: 'pointer' }} title="Line height">
+            <div style={tSep} />
+
+            {/* Alignment */}
+            {(['left', 'center', 'right'] as const).map(a => (
+              <button
+                key={a}
+                onClick={() => updateElement(currentPageIndex, selectedElementId, { align: a })}
+                style={(selectedEl.align || 'left') === a ? tBtnActive : tBtn}
+                title={`Align ${a}`}
+              >
+                {a === 'left' ? '⫷' : a === 'center' ? '≡' : '⫸'}
+              </button>
+            ))}
+
+            {/* Line height */}
+            <select
+              value={selectedEl.lineHeight || 1.4}
+              onChange={e => updateElement(currentPageIndex, selectedElementId, { lineHeight: parseFloat(e.target.value) })}
+              style={{ ...tBtn, cursor: 'pointer' }}
+              title="Line height"
+            >
               {[1, 1.2, 1.4, 1.6, 1.8, 2].map(v => (
                 <option key={v} value={v}>↕ {v}</option>
               ))}
             </select>
 
-            <div style={{ width: '1px', height: '24px', background: '#2a2a2a' }} />
-            <button onClick={() => deleteElement(currentPageIndex, selectedElementId)}
-              style={{ ...btnBase, background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#e05555' }}>
-              Delete
-            </button>
+            <div style={tSep} />
           </>
         )}
 
-        {selectedEl?.type === 'image' && selectedElementId && (
+        {/* Image element controls */}
+        {isImage && selectedElementId && (
           <>
-            <div style={{ width: '1px', height: '24px', background: '#2a2a2a' }} />
-            <button onClick={() => bringToFront(currentPageIndex, selectedElementId)} style={btnBase} title="Bring to front">↑ Front</button>
-            <button onClick={() => sendToBack(currentPageIndex, selectedElementId)} style={btnBase} title="Send to back">↓ Back</button>
-            <button onClick={() => deleteElement(currentPageIndex, selectedElementId)}
-              style={{ ...btnBase, background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#e05555' }}>
-              Delete
+            <button
+              onClick={() => bringToFront(currentPageIndex, selectedElementId)}
+              style={tBtn}
+              title="Bring to front"
+            >
+              ↑ Front
             </button>
+            <button
+              onClick={() => sendToBack(currentPageIndex, selectedElementId)}
+              style={tBtn}
+              title="Send to back"
+            >
+              ↓ Back
+            </button>
+            <div style={tSep} />
           </>
         )}
+
+        {/* Delete — shown when anything selected */}
+        {selectedElementId && (
+          <button
+            onClick={() => deleteElement(currentPageIndex, selectedElementId)}
+            style={{
+              ...tBtn,
+              color: 'var(--danger)',
+              background: 'var(--danger-muted)',
+              borderColor: 'transparent',
+            }}
+          >
+            Delete
+          </button>
+        )}
+
+        <div style={{ flex: 1 }} />
+
+        {/* Help hint */}
+        <span style={{ fontSize: '11px', color: 'var(--text-ghost)', flexShrink: 0, fontFamily: 'var(--font-body)' }}>
+          {selectedEl ? 'Drag to move · handles to resize' : 'Click to select · drag photos in'}
+        </span>
       </div>
 
-      {/* Canvas — responsive container */}
+      {/* ── Canvas stage ── */}
       <div
         ref={containerRef}
-        style={{ width: '100%', maxWidth: `${CANVAS_WIDTH}px` }}
+        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', overflow: 'hidden' }}
+        onDrop={handleDrop}
+        onDragOver={e => e.preventDefault()}
       >
         <div
           id="album-canvas-stage"
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
           style={{
             width: scaledW,
             height: scaledH,
-            boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
-            borderRadius: '2px',
+            boxShadow: '0 8px 48px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4)',
+            borderRadius: '3px',
             overflow: 'hidden',
+            flexShrink: 0,
           }}
         >
           <Stage
@@ -410,44 +522,40 @@ export default function AlbumCanvas() {
             height={CANVAS_HEIGHT}
             scaleX={scale}
             scaleY={scale}
-            onClick={(e) => { if (e.target === e.target.getStage()) setSelectedElementId(null) }}
+            onClick={e => { if (e.target === e.target.getStage()) setSelectedElementId(null) }}
           >
             <Layer>
-              <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill={currentPage.background} />
-              {currentPage.elements.map((el) => {
-                if (el.type === 'image') {
-                  return (
-                    <PhotoElement key={el.id} element={el}
-                      isSelected={selectedElementId === el.id}
-                      onSelect={() => setSelectedElementId(el.id)}
-                      onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
-                  )
+              {/* Background */}
+              <Rect
+                x={0} y={0}
+                width={CANVAS_WIDTH}
+                height={CANVAS_HEIGHT}
+                fill={currentPage.background?.startsWith('linear') ? '#1a1a1a' : (currentPage.background || '#0a0a0a')}
+              />
+
+              {/* Elements */}
+              {currentPage.elements.map(el => {
+                const sharedProps = {
+                  element: el,
+                  isSelected: selectedElementId === el.id,
+                  onSelect: () => setSelectedElementId(el.id),
+                  onUpdate: (u: Partial<PageElement>) => updateElement(currentPageIndex, el.id, u),
                 }
-                if (el.type === 'frame') {
-                  return (
-                    <PhotoElement key={el.id} element={el}
-                      isSelected={selectedElementId === el.id}
-                      onSelect={() => setSelectedElementId(el.id)}
-                      onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
-                  )
+                if (el.type === 'image' || el.type === 'frame') {
+                  return <PhotoElement key={el.id} {...sharedProps} />
                 }
-                return (
-                  <TextElement key={el.id} element={el}
-                    isSelected={selectedElementId === el.id}
-                    onSelect={() => setSelectedElementId(el.id)}
-                    onUpdate={(u) => updateElement(currentPageIndex, el.id, u)} />
-                )
+                return <TextElement key={el.id} {...sharedProps} />
               })}
-              {/* Invisible hit areas for context menu on elements */}
-              {currentPage.elements.map((el) => (
+
+              {/* Invisible hit areas for context menu */}
+              {currentPage.elements.map(el => (
                 <Rect
                   key={`ctx-${el.id}`}
                   x={el.x} y={el.y}
                   width={el.width} height={el.height}
                   rotation={el.rotation}
                   fill="transparent"
-                  listening={true}
-                  onContextMenu={(e) => handleContextMenu(e, el.id)}
+                  onContextMenu={e => handleContextMenu(e, el.id)}
                   onClick={() => setSelectedElementId(el.id)}
                 />
               ))}
@@ -456,23 +564,13 @@ export default function AlbumCanvas() {
         </div>
       </div>
 
-      <p style={{ color: '#333', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
-        Page {currentPageIndex + 1} of {album?.pages.length} · Drag photos from panel →
-      </p>
-
-      {/* Right-click Context Menu */}
+      {/* ── Context Menu ── */}
       <ContextMenu
         menu={contextMenu}
         onClose={closeContextMenu}
-        onDelete={() => {
-          if (contextMenu) deleteElement(currentPageIndex, contextMenu.elementId)
-        }}
-        onBringToFront={() => {
-          if (contextMenu) bringToFront(currentPageIndex, contextMenu.elementId)
-        }}
-        onSendToBack={() => {
-          if (contextMenu) sendToBack(currentPageIndex, contextMenu.elementId)
-        }}
+        onDelete={() => contextMenu && deleteElement(currentPageIndex, contextMenu.elementId)}
+        onFront={() => contextMenu && bringToFront(currentPageIndex, contextMenu.elementId)}
+        onBack={() => contextMenu && sendToBack(currentPageIndex, contextMenu.elementId)}
       />
     </div>
   )
