@@ -34,6 +34,47 @@ const SparkleIcon = () => (
   </svg>
 )
 
+// ── Friendly error message helper ─────────────────────────────────
+function friendlyAuthError(err: any): string {
+  const msg: string = err?.message || err?.error_description || String(err) || ''
+  const status: number = err?.status || err?.code || 0
+
+  // Rate limit errors (Supabase returns 429 with various messages)
+  if (
+    status === 429 ||
+    msg.toLowerCase().includes('rate limit') ||
+    msg.toLowerCase().includes('too many') ||
+    msg.toLowerCase().includes('over_email_send_rate_limit') ||
+    msg.toLowerCase().includes('over_request_rate_limit') ||
+    msg.toLowerCase().includes('limit reached') ||
+    msg.toLowerCase().includes('for security purposes')
+  ) {
+    return 'Too many attempts — please wait 60 seconds and try again. This is a Supabase security limit.'
+  }
+
+  // Email not confirmed
+  if (msg.toLowerCase().includes('email not confirmed') || msg.toLowerCase().includes('not confirmed')) {
+    return 'Please check your inbox and confirm your email before signing in.'
+  }
+
+  // Invalid credentials
+  if (msg.toLowerCase().includes('invalid login') || msg.toLowerCase().includes('invalid credentials')) {
+    return 'Incorrect email or password. Please try again.'
+  }
+
+  // User already exists
+  if (msg.toLowerCase().includes('user already registered') || msg.toLowerCase().includes('already exists')) {
+    return 'An account with this email already exists. Try signing in instead.'
+  }
+
+  // Password too short
+  if (msg.toLowerCase().includes('password should be')) {
+    return 'Password must be at least 6 characters long.'
+  }
+
+  return msg || 'Something went wrong. Please try again.'
+}
+
 // ── Auth Modal ────────────────────────────────────────────────────
 function AuthModal({
   mode, onClose, onSwitch
@@ -48,9 +89,18 @@ function AuthModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [countdown, setCountdown] = useState(0)
+
+  // Countdown timer for rate limit messaging
+  useEffect(() => {
+    if (countdown <= 0) return
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [countdown])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (countdown > 0) return
     setLoading(true)
     setError('')
     setSuccess('')
@@ -58,14 +108,23 @@ function AuthModal({
       if (mode === 'signup') {
         const { error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
-        setSuccess('Check your email to confirm your account.')
+        setSuccess('Account created! Check your email to confirm your account, then sign in.')
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
         router.push('/dashboard')
       }
     } catch (err: any) {
-      setError(err.message)
+      const friendly = friendlyAuthError(err)
+      setError(friendly)
+      // Start a 60-second countdown for rate-limit errors
+      if (
+        err?.status === 429 ||
+        friendly.includes('wait 60 seconds') ||
+        friendly.includes('security limit')
+      ) {
+        setCountdown(60)
+      }
     } finally {
       setLoading(false)
     }
@@ -144,6 +203,7 @@ function AuthModal({
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
+              minLength={6}
             />
           </div>
 
@@ -155,8 +215,14 @@ function AuthModal({
               padding: '10px 12px',
               fontSize: '13px',
               color: 'var(--danger)',
+              lineHeight: 1.5,
             }}>
               {error}
+              {countdown > 0 && (
+                <div style={{ marginTop: '6px', fontWeight: 600 }}>
+                  Retry in {countdown}s…
+                </div>
+              )}
             </div>
           )}
           {success && (
@@ -168,21 +234,25 @@ function AuthModal({
               fontSize: '13px',
               color: 'var(--success)',
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-start',
               gap: '8px',
+              lineHeight: 1.5,
             }}>
-              <CheckIcon /> {success}
+              <span style={{ flexShrink: 0, marginTop: '1px' }}><CheckIcon /></span>
+              {success}
             </div>
           )}
 
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={loading}
+            disabled={loading || countdown > 0}
             style={{ marginTop: '4px', height: '42px', fontSize: '14px' }}
           >
             {loading ? <span className="spinner" /> : (
-              mode === 'login' ? 'Sign in' : 'Create account'
+              countdown > 0
+                ? `Wait ${countdown}s…`
+                : mode === 'login' ? 'Sign in' : 'Create account'
             )}
           </button>
         </form>
@@ -195,7 +265,7 @@ function AuthModal({
         }}>
           {mode === 'login' ? "Don't have an account? " : 'Already have one? '}
           <button
-            onClick={() => onSwitch(mode === 'login' ? 'signup' : 'login')}
+            onClick={() => { onSwitch(mode === 'login' ? 'signup' : 'login'); setError(''); setSuccess('') }}
             style={{
               background: 'none',
               border: 'none',
@@ -262,7 +332,6 @@ export default function HomePage() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Parallax on hero
   useEffect(() => {
     const onScroll = () => {
       if (!heroRef.current) return
@@ -348,7 +417,6 @@ export default function HomePage() {
         borderBottom: scrolled ? '1px solid var(--border)' : '1px solid transparent',
         transition: 'background 300ms ease, backdrop-filter 300ms ease, border-color 300ms ease',
       }}>
-        {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{
             width: '28px',
@@ -376,34 +444,17 @@ export default function HomePage() {
           </span>
         </div>
 
-        {/* Links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <a href="#features" className="nav-link">Features</a>
           <a href="#how" className="nav-link">How it works</a>
-
           <div style={{ width: '1px', height: '18px', background: 'var(--border)', margin: '0 8px' }} />
-
-          {/* Theme toggle */}
-          <button
-            onClick={toggle}
-            className="btn btn-icon"
-            aria-label="Toggle theme"
-            style={{ color: 'var(--text-secondary)' }}
-          >
+          <button onClick={toggle} className="btn btn-icon" aria-label="Toggle theme" style={{ color: 'var(--text-secondary)' }}>
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
           </button>
-
-          <button
-            onClick={() => setAuthMode('login')}
-            className="btn btn-ghost btn-sm"
-            style={{ color: 'var(--text-secondary)' }}
-          >
+          <button onClick={() => setAuthMode('login')} className="btn btn-ghost btn-sm" style={{ color: 'var(--text-secondary)' }}>
             Sign in
           </button>
-          <button
-            onClick={() => setAuthMode('signup')}
-            className="btn btn-primary btn-sm"
-          >
+          <button onClick={() => setAuthMode('signup')} className="btn btn-primary btn-sm">
             Get started
           </button>
         </div>
@@ -420,34 +471,21 @@ export default function HomePage() {
         position: 'relative',
         overflow: 'hidden',
       }}>
-        {/* Background gradient blobs */}
-        <div ref={heroRef} style={{
-          position: 'absolute',
-          inset: 0,
-          pointerEvents: 'none',
-          overflow: 'hidden',
-        }}>
+        <div ref={heroRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
           <div style={{
-            position: 'absolute',
-            top: '15%',
-            left: '10%',
-            width: '500px',
-            height: '500px',
+            position: 'absolute', top: '15%', left: '10%',
+            width: '500px', height: '500px',
             background: 'radial-gradient(circle, rgba(212,140,58,0.08) 0%, transparent 70%)',
             borderRadius: '50%',
           }} />
           <div style={{
-            position: 'absolute',
-            bottom: '10%',
-            right: '8%',
-            width: '400px',
-            height: '400px',
+            position: 'absolute', bottom: '10%', right: '8%',
+            width: '400px', height: '400px',
             background: 'radial-gradient(circle, rgba(212,140,58,0.05) 0%, transparent 70%)',
             borderRadius: '50%',
           }} />
         </div>
 
-        {/* Badge */}
         <div className="animate-fade-up" style={{ marginBottom: '28px' }}>
           <div style={{
             display: 'inline-flex',
@@ -467,7 +505,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Headline */}
         <h1 className="animate-fade-up delay-100" style={{
           fontFamily: 'var(--font-display)',
           fontSize: 'clamp(52px, 9vw, 108px)',
@@ -480,16 +517,11 @@ export default function HomePage() {
           maxWidth: '900px',
         }}>
           Your memories,{' '}
-          <em style={{
-            color: 'var(--accent)',
-            fontStyle: 'italic',
-            fontWeight: 300,
-          }}>
+          <em style={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 300 }}>
             beautifully arranged.
           </em>
         </h1>
 
-        {/* Subheading */}
         <p className="animate-fade-up delay-200" style={{
           fontSize: '17px',
           color: 'var(--text-secondary)',
@@ -502,7 +534,6 @@ export default function HomePage() {
           Export as a print-ready PDF or order physical copies.
         </p>
 
-        {/* CTAs */}
         <div className="animate-fade-up delay-300" style={{
           display: 'flex',
           gap: '12px',
@@ -511,22 +542,14 @@ export default function HomePage() {
           justifyContent: 'center',
           marginBottom: '80px',
         }}>
-          <button
-            onClick={() => setAuthMode('signup')}
-            className="btn btn-primary btn-xl"
-            style={{ gap: '10px' }}
-          >
+          <button onClick={() => setAuthMode('signup')} className="btn btn-primary btn-xl" style={{ gap: '10px' }}>
             Create your first album <ArrowRight />
           </button>
-          <button
-            onClick={() => setAuthMode('login')}
-            className="btn btn-secondary btn-xl"
-          >
+          <button onClick={() => setAuthMode('login')} className="btn btn-secondary btn-xl">
             Sign in
           </button>
         </div>
 
-        {/* Preview cards */}
         <div className="animate-fade-up delay-400" style={{
           display: 'flex',
           gap: '20px',
@@ -539,7 +562,6 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Scroll hint */}
         <div className="animate-fade-in delay-500" style={{
           position: 'absolute',
           bottom: '32px',
@@ -555,175 +577,65 @@ export default function HomePage() {
           textTransform: 'uppercase',
         }}>
           <span>Scroll</span>
-          <div style={{
-            width: '1px',
-            height: '32px',
-            background: 'linear-gradient(to bottom, var(--text-muted), transparent)',
-          }} />
+          <div style={{ width: '1px', height: '32px', background: 'linear-gradient(to bottom, var(--text-muted), transparent)' }} />
         </div>
       </section>
 
       {/* ── Features ── */}
       <section id="features" style={{ padding: '100px 40px', maxWidth: '1100px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '64px' }}>
-          <p style={{
-            fontSize: '11px',
-            fontWeight: 600,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            color: 'var(--accent)',
-            marginBottom: '12px',
-          }}>
+          <p style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: '12px' }}>
             What you get
           </p>
-          <h2 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(36px, 5vw, 56px)',
-            fontWeight: 400,
-            color: 'var(--text-primary)',
-            lineHeight: 1.1,
-          }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, color: 'var(--text-primary)', lineHeight: 1.1 }}>
             Everything you need to create a{' '}
             <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>beautiful album</em>
           </h2>
         </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '16px',
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
           {features.map((f, i) => (
-            <div
-              key={f.title}
-              className="feature-card"
-              style={{ animationDelay: `${i * 60}ms` }}
-            >
-              <div style={{
-                fontSize: '22px',
-                color: 'var(--accent)',
-                marginBottom: '16px',
-                fontFamily: 'var(--font-display)',
-              }}>
-                {f.icon}
-              </div>
-              <h3 style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '22px',
-                fontWeight: 500,
-                color: 'var(--text-primary)',
-                marginBottom: '8px',
-              }}>
-                {f.title}
-              </h3>
-              <p style={{
-                fontSize: '14px',
-                color: 'var(--text-secondary)',
-                lineHeight: 1.7,
-              }}>
-                {f.desc}
-              </p>
+            <div key={f.title} className="feature-card" style={{ animationDelay: `${i * 60}ms` }}>
+              <div style={{ fontSize: '22px', color: 'var(--accent)', marginBottom: '16px', fontFamily: 'var(--font-display)' }}>{f.icon}</div>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '8px' }}>{f.title}</h3>
+              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.7 }}>{f.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* ── How it works ── */}
-      <section id="how" style={{
-        padding: '100px 40px',
-        borderTop: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
-      }}>
+      <section id="how" style={{ padding: '100px 40px', borderTop: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
         <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '64px' }}>
-            <p style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: 'var(--accent)',
-              marginBottom: '12px',
-            }}>
+            <p style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: '12px' }}>
               Three ways to create
             </p>
-            <h2 style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'clamp(36px, 5vw, 56px)',
-              fontWeight: 400,
-              color: 'var(--text-primary)',
-              lineHeight: 1.1,
-            }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, color: 'var(--text-primary)', lineHeight: 1.1 }}>
               Your workflow, your choice
             </h2>
           </div>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {modes.map((m, i) => (
               <div
                 key={m.num}
                 style={{
-                  display: 'flex',
-                  gap: '40px',
-                  padding: '36px 40px',
+                  display: 'flex', gap: '40px', padding: '36px 40px',
                   background: 'var(--bg-surface)',
-                  borderRadius: i === 0
-                    ? 'var(--radius-xl) var(--radius-xl) 0 0'
-                    : i === modes.length - 1
-                    ? '0 0 var(--radius-xl) var(--radius-xl)'
-                    : '0',
+                  borderRadius: i === 0 ? 'var(--radius-xl) var(--radius-xl) 0 0' : i === modes.length - 1 ? '0 0 var(--radius-xl) var(--radius-xl)' : '0',
                   border: '1px solid var(--border)',
                   borderTop: i > 0 ? 'none' : '1px solid var(--border)',
                   alignItems: 'flex-start',
                   transition: 'background var(--transition-base)',
                   cursor: 'default',
                 }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'
-                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)' }}
               >
-                <div style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '56px',
-                  fontWeight: 300,
-                  color: 'var(--text-ghost)',
-                  lineHeight: 1,
-                  flexShrink: 0,
-                  width: '80px',
-                }}>
-                  {m.num}
-                </div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '56px', fontWeight: 300, color: 'var(--text-ghost)', lineHeight: 1, flexShrink: 0, width: '80px' }}>{m.num}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{
-                    display: 'inline-block',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    color: 'var(--accent)',
-                    marginBottom: '8px',
-                  }}>
-                    {m.tag}
-                  </div>
-                  <h3 style={{
-                    fontFamily: 'var(--font-display)',
-                    fontSize: '28px',
-                    fontWeight: 500,
-                    color: 'var(--text-primary)',
-                    marginBottom: '10px',
-                  }}>
-                    {m.title}
-                  </h3>
-                  <p style={{
-                    fontSize: '15px',
-                    color: 'var(--text-secondary)',
-                    lineHeight: 1.7,
-                    maxWidth: '540px',
-                  }}>
-                    {m.desc}
-                  </p>
+                  <div style={{ display: 'inline-block', fontSize: '11px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: '8px' }}>{m.tag}</div>
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '10px' }}>{m.title}</h3>
+                  <p style={{ fontSize: '15px', color: 'var(--text-secondary)', lineHeight: 1.7, maxWidth: '540px' }}>{m.desc}</p>
                 </div>
               </div>
             ))}
@@ -732,62 +644,23 @@ export default function HomePage() {
       </section>
 
       {/* ── CTA ── */}
-      <section style={{
-        padding: '120px 40px',
-        textAlign: 'center',
-        borderTop: '1px solid var(--border)',
-      }}>
-        <h2 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 'clamp(42px, 6vw, 76px)',
-          fontWeight: 400,
-          color: 'var(--text-primary)',
-          lineHeight: 1.05,
-          marginBottom: '24px',
-        }}>
+      <section style={{ padding: '120px 40px', textAlign: 'center', borderTop: '1px solid var(--border)' }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(42px, 6vw, 76px)', fontWeight: 400, color: 'var(--text-primary)', lineHeight: 1.05, marginBottom: '24px' }}>
           Ready to preserve your{' '}
           <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>best moments?</em>
         </h2>
-        <p style={{
-          fontSize: '16px',
-          color: 'var(--text-secondary)',
-          marginBottom: '40px',
-          maxWidth: '440px',
-          margin: '0 auto 40px',
-          lineHeight: 1.7,
-        }}>
+        <p style={{ fontSize: '16px', color: 'var(--text-secondary)', marginBottom: '40px', maxWidth: '440px', margin: '0 auto 40px', lineHeight: 1.7 }}>
           Free to start. AI-designed albums in minutes.
         </p>
-        <button
-          onClick={() => setAuthMode('signup')}
-          className="btn btn-primary btn-xl"
-          style={{ gap: '10px' }}
-        >
+        <button onClick={() => setAuthMode('signup')} className="btn btn-primary btn-xl" style={{ gap: '10px' }}>
           Start your first album <ArrowRight />
         </button>
       </section>
 
       {/* ── Footer ── */}
-      <footer style={{
-        borderTop: '1px solid var(--border)',
-        padding: '28px 40px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '12px',
-      }}>
-        <span style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '16px',
-          color: 'var(--text-muted)',
-          letterSpacing: '0.04em',
-        }}>
-          Folio
-        </span>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          © {new Date().getFullYear()} · Built with Claude
-        </span>
+      <footer style={{ borderTop: '1px solid var(--border)', padding: '28px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontSize: '16px', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>Folio</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>© {new Date().getFullYear()} · Built with Claude</span>
       </footer>
 
       {/* ── Auth Modal ── */}

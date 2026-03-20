@@ -5,24 +5,29 @@ const CANVAS_W = 800
 const CANVAS_H = 600
 const MARGIN = 32
 
-// Simple in-memory rate limiter (per user, resets on server restart)
+// ── Rate limiter — more lenient for production use ─────────────────
+// NOTE: In-memory only — resets on Vercel cold start.
+// For persistent rate limiting, replace with Upstash Redis.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT = 10
-const RATE_WINDOW = 60_000
+const RATE_LIMIT  = 30          // 30 requests …
+const RATE_WINDOW = 5 * 60_000  // … per 5 minutes per user
 
-function checkRateLimit(userId: string): boolean {
+function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
   const now = Date.now()
   const entry = rateLimitMap.get(userId)
+
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW })
-    return true
+    return { allowed: true, remaining: RATE_LIMIT - 1 }
   }
-  if (entry.count >= RATE_LIMIT) return false
+  if (entry.count >= RATE_LIMIT) {
+    return { allowed: false, remaining: 0 }
+  }
   entry.count++
-  return true
+  return { allowed: true, remaining: RATE_LIMIT - entry.count }
 }
 
-// ── Schema validation ──────────────────────────────────────────────────────────
+// ── Schema validation ──────────────────────────────────────────────
 function isValidLayout(obj: unknown): obj is { pages: any[] } {
   if (!obj || typeof obj !== 'object') return false
   const o = obj as Record<string, unknown>
@@ -53,37 +58,45 @@ function isValidRefinement(obj: unknown): obj is { pages: any[] } {
   return true
 }
 
-// ✅ Exact model string as required
 const CLAUDE_MODEL = 'claude-haiku-4-5-20251001'
 
 export async function POST(req: NextRequest) {
-  // 1. Auth check
+  // 1. Auth check — use getUser with the Bearer token
   const authHeader = req.headers.get('authorization')
-  const token = authHeader?.replace('Bearer ', '')
+  const token = authHeader?.replace('Bearer ', '').trim()
+
   if (!token) {
     return NextResponse.json(
-      { error: 'Nuk jeni të kyçur. Ju lutemi kyçuni dhe provoni përsëri.' },
+      { error: 'Not authenticated. Please sign in and try again.' },
       { status: 401 }
     )
   }
 
+  // Create a Supabase client that uses the user's token
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    }
   )
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+  // Validate the session — getUser() verifies against Supabase auth server
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+
   if (authError || !user) {
     return NextResponse.json(
-      { error: 'Sesioni juaj ka skaduar. Ju lutemi kyçuni përsëri.' },
+      { error: 'Session expired. Please sign in again.' },
       { status: 401 }
     )
   }
 
   // 2. Rate limit
-  if (!checkRateLimit(user.id)) {
+  const { allowed, remaining } = checkRateLimit(user.id)
+  if (!allowed) {
     return NextResponse.json(
-      { error: 'Keni bërë shumë kërkesa. Prisni një moment dhe provoni përsëri.' },
-      { status: 429 }
+      { error: 'You have made too many AI requests. Please wait a few minutes and try again.' },
+      { status: 429, headers: { 'X-RateLimit-Remaining': '0' } }
     )
   }
 
@@ -99,16 +112,16 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'Shërbimi AI nuk është konfiguruar. Kontaktoni administratorin.' },
+      { error: 'AI service is not configured. Please contact the administrator.' },
       { status: 500 }
     )
   }
 
-  // ── REFINE MODE: preserve photo positions, update style only ───────────────
+  // ── REFINE MODE ──────────────────────────────────────────────────
   if (mode === 'refine') {
     if (!currentPages || !Array.isArray(currentPages) || currentPages.length === 0) {
       return NextResponse.json(
-        { error: 'Nuk ka faqe ekzistuese për të rifreskuar. Gjeneroni albumin fillimisht.' },
+        { error: 'No existing pages to refine. Generate the album first.' },
         { status: 400 }
       )
     }
@@ -203,7 +216,10 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
       if (!res.ok) {
         const errBody = await res.text()
         console.error('Claude refine error:', res.status, errBody)
-        throw new Error(`Shërbimi AI ktheu gabim: ${res.status}`)
+        if (res.status === 529 || res.status === 503) {
+          throw new Error('The AI service is temporarily overloaded. Please try again in a moment.')
+        }
+        throw new Error(`AI service error (${res.status})`)
       }
 
       const data = await res.json()
@@ -215,15 +231,14 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
         refinement = JSON.parse(cleaned)
       } catch {
         console.error('Refine JSON parse failed:', rawText.slice(0, 500))
-        throw new Error('Përgjigja nga AI nuk ishte e vlefshme. Provoni përsëri.')
+        throw new Error('AI returned an invalid response. Please try again.')
       }
 
       if (!isValidRefinement(refinement)) {
         console.error('Refinement schema invalid:', JSON.stringify(refinement).slice(0, 500))
-        throw new Error('Struktura e rifreskimit nga AI ishte e gabuar. Provoni përsëri.')
+        throw new Error('AI response structure was invalid. Please try again.')
       }
 
-      // Merge refinement into current pages (preserve all image/frame elements)
       const refinedPages = currentPages.map((page: any, pageIndex: number) => {
         const update = (refinement as any).pages.find((p: any) => p.pageIndex === pageIndex)
         if (!update) return page
@@ -263,16 +278,16 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
     } catch (err: any) {
       console.error('AI refine error:', err)
       return NextResponse.json(
-        { error: err.message || 'Nuk mund të rifreskohet albumi. Provoni përsëri.' },
+        { error: err.message || 'Could not refine the album. Please try again.' },
         { status: 500 }
       )
     }
   }
 
-  // ── GENERATE MODE (default): fresh layout from scratch ────────────────────
+  // ── GENERATE MODE ────────────────────────────────────────────────
   if (!photos || photos.length === 0) {
     return NextResponse.json(
-      { error: 'Nuk keni ngarkuar foto. Ju lutemi ngarkoni të paktën një foto.' },
+      { error: 'No photos provided. Please upload at least one photo first.' },
       { status: 400 }
     )
   }
@@ -363,12 +378,14 @@ Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
     if (!res.ok) {
       const errBody = await res.text()
       console.error('Claude API error:', res.status, errBody)
-      throw new Error(`Shërbimi AI ktheu gabim: ${res.status}`)
+      if (res.status === 529 || res.status === 503) {
+        throw new Error('The AI service is temporarily overloaded. Please try again in a moment.')
+      }
+      throw new Error(`AI service error (${res.status})`)
     }
 
     const data = await res.json()
     const rawText: string = data.content?.[0]?.text || ''
-
     const cleaned = rawText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
 
     let layout: unknown
@@ -376,12 +393,12 @@ Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
       layout = JSON.parse(cleaned)
     } catch {
       console.error('JSON parse failed. Raw text:', rawText.slice(0, 500))
-      throw new Error('Përgjigja nga AI nuk ishte e vlefshme. Provoni përsëri.')
+      throw new Error('AI returned an invalid response. Please try again.')
     }
 
     if (!isValidLayout(layout)) {
       console.error('Layout schema validation failed:', JSON.stringify(layout).slice(0, 500))
-      throw new Error('Struktura e albumit nga AI ishte e gabuar. Provoni përsëri.')
+      throw new Error('AI response structure was invalid. Please try again.')
     }
 
     // Replace __PLACEHOLDER__ URLs with real photo URLs
@@ -402,29 +419,8 @@ Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
   } catch (err: any) {
     console.error('AI layout error:', err)
     return NextResponse.json(
-      { error: err.message || 'Nuk mund të gjenerohet albumi. Provoni përsëri.' },
+      { error: err.message || 'Could not generate the album. Please try again.' },
       { status: 500 }
     )
   }
-}
-
-function generateFallbackLayout(photos: any[], pageCount: number) {
-  const pages = []
-  const perPage = Math.ceil(photos.length / pageCount)
-  for (let p = 0; p < pageCount; p++) {
-    const pagePhotos = photos.slice(p * perPage, (p + 1) * perPage)
-    const cols = Math.ceil(Math.sqrt(pagePhotos.length))
-    const rows = Math.ceil(pagePhotos.length / cols)
-    const w = (CANVAS_W - MARGIN * (cols + 1)) / cols
-    const h = (CANVAS_H - MARGIN * (rows + 1) - 60) / rows
-    const elements = pagePhotos.map((photo, i) => ({
-      id: crypto.randomUUID(), type: 'image',
-      photoId: photo.id, url: photo.url,
-      x: MARGIN + (i % cols) * (w + MARGIN),
-      y: MARGIN + Math.floor(i / cols) * (h + MARGIN),
-      width: w, height: h, rotation: 0,
-    }))
-    pages.push({ id: crypto.randomUUID(), background: '#ffffff', elements })
-  }
-  return pages
 }
