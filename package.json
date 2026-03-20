@@ -21,7 +21,7 @@
     "react": "^18",
     "react-dom": "^18",
     "react-dropzone": "^14.4.1",
-    "react-konva": "^19.2.3",
+    "react-konva": "^18.2.10",
     "use-image": "^1.1.4",
     "zustand": "^4.5.7"
   },
