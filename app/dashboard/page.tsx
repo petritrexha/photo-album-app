@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, Album } from '@/lib/supabase'
 import { useTheme } from '@/lib/theme'
@@ -165,7 +165,6 @@ function AlbumCard({ album, onOpen, onDelete }: {
           </div>
         )}
 
-        {/* Overlay gradient on hover */}
         <div style={{
           position: 'absolute',
           inset: 0,
@@ -175,7 +174,6 @@ function AlbumCard({ album, onOpen, onDelete }: {
           pointerEvents: 'none',
         }} />
 
-        {/* Open label on hover */}
         <div style={{
           position: 'absolute',
           bottom: '12px',
@@ -247,18 +245,10 @@ function AlbumCard({ album, onOpen, onDelete }: {
             >
               <button
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '9px 14px',
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-primary)',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-body)',
-                  textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                  padding: '9px 14px', background: 'none', border: 'none',
+                  color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer',
+                  fontFamily: 'var(--font-body)', textAlign: 'left',
                   transition: 'background var(--transition-fast)',
                 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
@@ -270,18 +260,10 @@ function AlbumCard({ album, onOpen, onDelete }: {
               <div style={{ height: '1px', background: 'var(--border)' }} />
               <button
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '9px 14px',
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--danger)',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-body)',
-                  textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                  padding: '9px 14px', background: 'none', border: 'none',
+                  color: 'var(--danger)', fontSize: '13px', cursor: 'pointer',
+                  fontFamily: 'var(--font-body)', textAlign: 'left',
                   transition: 'background var(--transition-fast)',
                 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--danger-muted)')}
@@ -307,13 +289,10 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       padding: '100px 40px',
     }}>
       <div style={{
-        width: '72px',
-        height: '72px',
+        width: '72px', height: '72px',
         background: 'var(--bg-tertiary)',
         borderRadius: 'var(--radius-xl)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
         margin: '0 auto 20px',
         border: '1px solid var(--border)',
       }}>
@@ -365,7 +344,6 @@ export default function DashboardPage() {
   const { theme, toggle } = useTheme()
   const [albums, setAlbums] = useState<Album[]>([])
   const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Album | null>(null)
   const [userEmail, setUserEmail] = useState('')
   const [search, setSearch] = useState('')
@@ -384,17 +362,9 @@ export default function DashboardPage() {
     setLoading(false)
   }
 
-  async function createAlbum() {
-    setCreating(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('albums').insert({
-      user_id: user.id,
-      title: 'Untitled Album',
-      pages: [{ id: crypto.randomUUID(), background: '#0f0f0f', elements: [] }],
-    }).select().single()
-    if (data) router.push(`/album/${data.id}/edit`)
-    setCreating(false)
+  // Route to the product category picker instead of creating directly
+  function handleNewAlbum() {
+    router.push('/create')
   }
 
   async function deleteAlbum(album: Album) {
@@ -412,9 +382,7 @@ export default function DashboardPage() {
     a.title.toLowerCase().includes(search.toLowerCase())
   )
 
-  const initials = userEmail
-    ? userEmail[0].toUpperCase()
-    : '?'
+  const initials = userEmail ? userEmail[0].toUpperCase() : '?'
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
@@ -485,7 +453,7 @@ export default function DashboardPage() {
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
 
-        {/* Avatar menu */}
+        {/* Avatar + sign out */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{
             width: '30px', height: '30px',
@@ -538,14 +506,14 @@ export default function DashboardPage() {
             )}
           </div>
 
+          {/* ── New Album → goes to /create ── */}
           <button
             className="btn btn-primary"
-            onClick={createAlbum}
-            disabled={creating}
+            onClick={handleNewAlbum}
             style={{ gap: '8px', height: '40px' }}
           >
-            {creating ? <span className="spinner" style={{ width: '14px', height: '14px' }} /> : <PlusIcon />}
-            {creating ? 'Creating…' : 'New Album'}
+            <PlusIcon />
+            New Album
           </button>
         </div>
 
@@ -561,16 +529,11 @@ export default function DashboardPage() {
             gap: '12px',
             marginBottom: '28px',
           }}>
-            <div style={{
-              color: 'var(--accent)',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-            }}>
+            <div style={{ color: 'var(--accent)', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
               <SparkleIcon />
             </div>
             <p style={{ fontSize: '13px', color: 'var(--accent)', lineHeight: 1.5 }}>
-              <strong>Tip:</strong> Open any album and click <strong>✨ AI Style</strong> to have Claude design a complete layout from your photos.
+              <strong>Tip:</strong> Open any album and click <strong>✨ AI Layout</strong> to have Claude design a complete layout from your photos.
             </p>
           </div>
         )}
@@ -584,7 +547,7 @@ export default function DashboardPage() {
           {loading ? (
             Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
           ) : filtered.length === 0 ? (
-            <EmptyState onCreate={createAlbum} />
+            <EmptyState onCreate={handleNewAlbum} />
           ) : (
             filtered.map((album, i) => (
               <div
