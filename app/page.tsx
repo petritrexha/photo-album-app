@@ -112,7 +112,7 @@ function AuthModal({
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
-        router.push('/dashboard')
+        router.push('/home')
       }
     } catch (err: any) {
       const friendly = friendlyAuthError(err)
