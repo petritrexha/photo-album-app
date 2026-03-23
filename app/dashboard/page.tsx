@@ -67,25 +67,15 @@ function DeleteConfirm({ albumTitle, onConfirm, onCancel }: {
         onClick={e => e.stopPropagation()}
       >
         <div style={{
-          width: '40px',
-          height: '40px',
+          width: '40px', height: '40px',
           background: 'var(--danger-muted)',
           borderRadius: 'var(--radius-lg)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: '16px',
-          color: 'var(--danger)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginBottom: '16px', color: 'var(--danger)',
         }}>
           <TrashIcon />
         </div>
-        <h3 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '20px',
-          fontWeight: 500,
-          color: 'var(--text-primary)',
-          marginBottom: '8px',
-        }}>Delete album?</h3>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '8px' }}>Delete album?</h3>
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '24px' }}>
           <strong>"{albumTitle}"</strong> will be permanently deleted. This action cannot be undone.
         </p>
@@ -125,38 +115,11 @@ function AlbumCard({ album, onOpen, onDelete }: {
       }}
     >
       {/* Cover image */}
-      <div
-        style={{
-          height: '160px',
-          background: 'var(--bg-tertiary)',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-        onClick={onOpen}
-      >
+      <div style={{ height: '160px', background: 'var(--bg-tertiary)', overflow: 'hidden', position: 'relative' }} onClick={onOpen}>
         {album.cover_url ? (
-          <img
-            src={album.cover_url}
-            alt={album.title}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              transform: hovered ? 'scale(1.04)' : 'scale(1)',
-              transition: 'transform 400ms ease',
-            }}
-          />
+          <img src={album.cover_url} alt={album.title} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: hovered ? 'scale(1.04)' : 'scale(1)', transition: 'transform 400ms ease' }} />
         ) : (
-          <div style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexDirection: 'column',
-            gap: '10px',
-            color: 'var(--text-ghost)',
-          }}>
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '10px', color: 'var(--text-ghost)' }}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
               <polyline points="21 15 16 10 5 21"/>
@@ -164,33 +127,8 @@ function AlbumCard({ album, onOpen, onDelete }: {
             <span style={{ fontSize: '12px' }}>No cover photo</span>
           </div>
         )}
-
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 60%)',
-          opacity: hovered ? 1 : 0,
-          transition: 'opacity 250ms ease',
-          pointerEvents: 'none',
-        }} />
-
-        <div style={{
-          position: 'absolute',
-          bottom: '12px',
-          left: '50%',
-          transform: hovered ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(8px)',
-          opacity: hovered ? 1 : 0,
-          transition: 'opacity 200ms ease, transform 200ms ease',
-          background: 'var(--accent)',
-          color: '#0a0a0a',
-          fontSize: '11px',
-          fontWeight: 600,
-          padding: '4px 12px',
-          borderRadius: 'var(--radius-full)',
-          letterSpacing: '0.04em',
-          whiteSpace: 'nowrap',
-          pointerEvents: 'none',
-        }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 60%)', opacity: hovered ? 1 : 0, transition: 'opacity 250ms ease', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: '12px', left: '50%', transform: hovered ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(8px)', opacity: hovered ? 1 : 0, transition: 'opacity 200ms ease, transform 200ms ease', background: 'var(--accent)', color: '#0a0a0a', fontSize: '11px', fontWeight: 600, padding: '4px 12px', borderRadius: 'var(--radius-full)', letterSpacing: '0.04em', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
           Open editor
         </div>
       </div>
@@ -198,16 +136,7 @@ function AlbumCard({ album, onOpen, onDelete }: {
       {/* Info */}
       <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
         <div style={{ flex: 1, minWidth: 0 }} onClick={onOpen}>
-          <h3 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '16px',
-            fontWeight: 500,
-            color: 'var(--text-primary)',
-            marginBottom: '4px',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '16px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {album.title}
           </h3>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -217,61 +146,24 @@ function AlbumCard({ album, onOpen, onDelete }: {
 
         {/* Actions menu */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
-          <button
-            className="btn btn-icon"
-            style={{ width: '28px', height: '28px', padding: 0, opacity: hovered ? 1 : 0, transition: 'opacity 200ms' }}
-            onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
-          >
+          <button className="btn btn-icon" style={{ width: '28px', height: '28px', padding: 0, opacity: hovered ? 1 : 0, transition: 'opacity 200ms' }} onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen) }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
             </svg>
           </button>
           {menuOpen && (
-            <div
-              className="animate-scale-in"
-              style={{
-                position: 'absolute',
-                right: 0,
-                top: '32px',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: 'var(--shadow-lg)',
-                overflow: 'hidden',
-                minWidth: '140px',
-                zIndex: 10,
-              }}
-              onClick={e => e.stopPropagation()}
-            >
-              <button
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
-                  padding: '9px 14px', background: 'none', border: 'none',
-                  color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer',
-                  fontFamily: 'var(--font-body)', textAlign: 'left',
-                  transition: 'background var(--transition-fast)',
-                }}
+            <div className="animate-scale-in" style={{ position: 'absolute', right: 0, top: '32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden', minWidth: '140px', zIndex: 10 }} onClick={e => e.stopPropagation()}>
+              <button style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left', transition: 'background var(--transition-fast)' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                 onClick={() => { setMenuOpen(false); onOpen() }}
-              >
-                <EditIcon /> Edit
-              </button>
+              ><EditIcon /> Edit</button>
               <div style={{ height: '1px', background: 'var(--border)' }} />
-              <button
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
-                  padding: '9px 14px', background: 'none', border: 'none',
-                  color: 'var(--danger)', fontSize: '13px', cursor: 'pointer',
-                  fontFamily: 'var(--font-body)', textAlign: 'left',
-                  transition: 'background var(--transition-fast)',
-                }}
+              <button style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: 'var(--danger)', fontSize: '13px', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left', transition: 'background var(--transition-fast)' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--danger-muted)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                 onClick={() => { setMenuOpen(false); onDelete() }}
-              >
-                <TrashIcon /> Delete
-              </button>
+              ><TrashIcon /> Delete</button>
             </div>
           )}
         </div>
@@ -283,52 +175,23 @@ function AlbumCard({ album, onOpen, onDelete }: {
 // ── Empty State ───────────────────────────────────────────────────
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="animate-fade-up" style={{
-      gridColumn: '1 / -1',
-      textAlign: 'center',
-      padding: '100px 40px',
-    }}>
-      <div style={{
-        width: '72px', height: '72px',
-        background: 'var(--bg-tertiary)',
-        borderRadius: 'var(--radius-xl)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        margin: '0 auto 20px',
-        border: '1px solid var(--border)',
-      }}>
+    <div className="animate-fade-up" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '100px 40px' }}>
+      <div style={{ width: '72px', height: '72px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-xl)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', border: '1px solid var(--border)' }}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5">
           <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
           <polyline points="21 15 16 10 5 21"/>
         </svg>
       </div>
-      <h3 style={{
-        fontFamily: 'var(--font-display)',
-        fontSize: '24px',
-        fontWeight: 400,
-        color: 'var(--text-primary)',
-        marginBottom: '8px',
-      }}>
-        No albums yet
-      </h3>
-      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '28px', lineHeight: 1.6 }}>
-        Create your first album and let AI design it for you.
-      </p>
-      <button className="btn btn-primary" style={{ gap: '8px' }} onClick={onCreate}>
-        <PlusIcon /> Create album
-      </button>
+      <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 400, color: 'var(--text-primary)', marginBottom: '8px' }}>No albums yet</h3>
+      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '28px', lineHeight: 1.6 }}>Create your first album and let AI design it for you.</p>
+      <button className="btn btn-primary" style={{ gap: '8px' }} onClick={onCreate}><PlusIcon /> Create album</button>
     </div>
   )
 }
 
-// ── Skeleton cards ─────────────────────────────────────────────────
 function SkeletonCard() {
   return (
-    <div style={{
-      background: 'var(--bg-surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-lg)',
-      overflow: 'hidden',
-    }}>
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
       <div className="skeleton" style={{ height: '160px', borderRadius: 0 }} />
       <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <div className="skeleton" style={{ height: '16px', width: '60%' }} />
@@ -354,18 +217,12 @@ export default function DashboardPage() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/'); return }
     setUserEmail(session.user.email || '')
-    const { data } = await supabase
-      .from('albums')
-      .select('*')
-      .order('updated_at', { ascending: false })
+    const { data } = await supabase.from('albums').select('*').order('updated_at', { ascending: false })
     setAlbums(data || [])
     setLoading(false)
   }
 
-  // Route to the product category picker instead of creating directly
-  function handleNewAlbum() {
-    router.push('/create')
-  }
+  function handleNewAlbum() { router.push('/create') }
 
   async function deleteAlbum(album: Album) {
     await supabase.from('albums').delete().eq('id', album.id)
@@ -378,10 +235,7 @@ export default function DashboardPage() {
     router.push('/')
   }
 
-  const filtered = albums.filter(a =>
-    a.title.toLowerCase().includes(search.toLowerCase())
-  )
-
+  const filtered = albums.filter(a => a.title.toLowerCase().includes(search.toLowerCase()))
   const initials = userEmail ? userEmail[0].toUpperCase() : '?'
 
   return (
@@ -392,16 +246,30 @@ export default function DashboardPage() {
         height: '60px',
         background: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 28px',
-        gap: '16px',
-        position: 'sticky',
-        top: 0,
-        zIndex: 20,
+        display: 'flex', alignItems: 'center',
+        padding: '0 28px', gap: '16px',
+        position: 'sticky', top: 0, zIndex: 20,
       }}>
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '8px' }}>
+
+        {/* ── Logo — clicking goes back to landing page ── */}
+        <button
+          onClick={() => router.push('/')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginRight: '8px',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px 6px',
+            borderRadius: '8px',
+            transition: 'background 150ms ease',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+          title="Go to home page"
+        >
           <div style={{
             width: '26px', height: '26px',
             background: 'var(--accent)',
@@ -423,53 +291,27 @@ export default function DashboardPage() {
           }}>
             Folio
           </span>
-        </div>
+        </button>
 
         {/* Search */}
         <div style={{ flex: 1, maxWidth: '320px', position: 'relative' }}>
-          <svg
-            style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
-            width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <input
-            className="input"
-            placeholder="Search albums…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ paddingLeft: '32px', height: '34px', fontSize: '13px' }}
-          />
+          <input className="input" placeholder="Search albums…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: '32px', height: '34px', fontSize: '13px' }} />
         </div>
 
         <div style={{ flex: 1 }} />
 
-        {/* Right controls */}
-        <button
-          onClick={toggle}
-          className="btn btn-icon"
-          aria-label="Toggle theme"
-          style={{ color: 'var(--text-secondary)' }}
-        >
+        <button onClick={toggle} className="btn btn-icon" aria-label="Toggle theme" style={{ color: 'var(--text-secondary)' }}>
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
 
-        {/* Avatar + sign out */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '30px', height: '30px',
-            background: 'var(--accent-muted)',
-            border: '1.5px solid var(--accent)',
-            borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '13px', fontWeight: 600, color: 'var(--accent)',
-          }}>
+          <div style={{ width: '30px', height: '30px', background: 'var(--accent-muted)', border: '1.5px solid var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}>
             {initials}
           </div>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={signOut}
-            style={{ gap: '6px', color: 'var(--text-secondary)' }}
-          >
+          <button className="btn btn-ghost btn-sm" onClick={signOut} style={{ gap: '6px', color: 'var(--text-secondary)' }}>
             <SignOutIcon /> Sign out
           </button>
         </div>
@@ -478,24 +320,9 @@ export default function DashboardPage() {
       {/* ── Main content ── */}
       <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '40px 28px' }}>
 
-        {/* Page header */}
-        <div className="animate-fade-up" style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
-          marginBottom: '36px',
-          flexWrap: 'wrap',
-          gap: '16px',
-        }}>
+        <div className="animate-fade-up" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '36px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <h1 style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: '40px',
-              fontWeight: 400,
-              color: 'var(--text-primary)',
-              lineHeight: 1,
-              marginBottom: '6px',
-            }}>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '40px', fontWeight: 400, color: 'var(--text-primary)', lineHeight: 1, marginBottom: '6px' }}>
               Your Albums
             </h1>
             {!loading && (
@@ -505,33 +332,15 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
-
-          {/* ── New Album → goes to /create ── */}
-          <button
-            className="btn btn-primary"
-            onClick={handleNewAlbum}
-            style={{ gap: '8px', height: '40px' }}
-          >
-            <PlusIcon />
-            New Album
+          <button className="btn btn-primary" onClick={handleNewAlbum} style={{ gap: '8px', height: '40px' }}>
+            <PlusIcon /> New Album
           </button>
         </div>
 
-        {/* AI suggestion banner */}
+        {/* AI tip banner */}
         {!loading && albums.length > 0 && (
-          <div className="animate-fade-up delay-100" style={{
-            background: 'var(--accent-muted)',
-            border: '1px solid rgba(212, 140, 58, 0.2)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '14px 18px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '28px',
-          }}>
-            <div style={{ color: 'var(--accent)', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-              <SparkleIcon />
-            </div>
+          <div className="animate-fade-up delay-100" style={{ background: 'var(--accent-muted)', border: '1px solid rgba(212, 140, 58, 0.2)', borderRadius: 'var(--radius-lg)', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '28px' }}>
+            <div style={{ color: 'var(--accent)', flexShrink: 0, display: 'flex', alignItems: 'center' }}><SparkleIcon /></div>
             <p style={{ fontSize: '13px', color: 'var(--accent)', lineHeight: 1.5 }}>
               <strong>Tip:</strong> Open any album and click <strong>✨ AI Layout</strong> to have Claude design a complete layout from your photos.
             </p>
@@ -539,27 +348,15 @@ export default function DashboardPage() {
         )}
 
         {/* Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-          gap: '16px',
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
           {loading ? (
             Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
           ) : filtered.length === 0 ? (
             <EmptyState onCreate={handleNewAlbum} />
           ) : (
             filtered.map((album, i) => (
-              <div
-                key={album.id}
-                className="animate-fade-up"
-                style={{ animationDelay: `${i * 40}ms` }}
-              >
-                <AlbumCard
-                  album={album}
-                  onOpen={() => router.push(`/album/${album.id}/edit`)}
-                  onDelete={() => setDeleteTarget(album)}
-                />
+              <div key={album.id} className="animate-fade-up" style={{ animationDelay: `${i * 40}ms` }}>
+                <AlbumCard album={album} onOpen={() => router.push(`/album/${album.id}/edit`)} onDelete={() => setDeleteTarget(album)} />
               </div>
             ))
           )}
@@ -568,11 +365,7 @@ export default function DashboardPage() {
 
       {/* ── Delete confirm modal ── */}
       {deleteTarget && (
-        <DeleteConfirm
-          albumTitle={deleteTarget.title}
-          onConfirm={() => deleteAlbum(deleteTarget)}
-          onCancel={() => setDeleteTarget(null)}
-        />
+        <DeleteConfirm albumTitle={deleteTarget.title} onConfirm={() => deleteAlbum(deleteTarget)} onCancel={() => setDeleteTarget(null)} />
       )}
     </div>
   )
