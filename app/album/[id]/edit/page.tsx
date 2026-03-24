@@ -544,6 +544,7 @@ export default function AlbumEditorPage() {
   const [loadError,      setLoadError]      = useState<string | null>(null)
   const [loadAttempt,    setLoadAttempt]    = useState(0)
   const [activeTool,     setActiveTool]     = useState<'select' | 'text' | 'shape' | 'sticker'>('select')
+  const [showPreview,    setShowPreview]    = useState(false)
 
   const savingRef   = useRef(false)
   savingRef.current = saving
@@ -798,6 +799,145 @@ export default function AlbumEditorPage() {
       <span>{label}</span>
     </button>
   )
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  // Mobile simplified view
+  if (isMobile) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Mobile topbar */}
+        <div style={{
+          height: '56px',
+          background: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 12px', gap: '8px', flexShrink: 0, zIndex: 50,
+        }}>
+          <button className="btn btn-icon" onClick={() => router.push('/dashboard')} style={{ width: '36px', height: '36px', color: 'var(--text-secondary)' }}>
+            <Icons.ArrowLeft />
+          </button>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>Editing</div>
+          </div>
+          <button className="btn btn-icon" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ width: '36px', height: '36px', color: 'var(--text-secondary)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+        </div>
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <div style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border)', padding: '8px 0', display: 'flex', flexDirection: 'column', gap: '0', zIndex: 40 }}>
+            <button onClick={() => { setShowAIGenerate(true); setMobileMenuOpen(false) }} disabled={photos.length === 0} style={{ textAlign: 'left', padding: '12px 16px', background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '13px', fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all var(--transition-fast)' }} onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }} onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>✨ AI Layout</button>
+            {hasElements && (
+              <button onClick={() => { setShowAIRefine(true); setMobileMenuOpen(false) }} style={{ textAlign: 'left', padding: '12px 16px', background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '13px', fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all var(--transition-fast)' }} onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }} onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>✨ Restyle</button>
+            )}
+            <button onClick={() => { setShowExport(true); setMobileMenuOpen(false) }} style={{ textAlign: 'left', padding: '12px 16px', background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '13px', fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all var(--transition-fast)' }} onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }} onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>📥 Export</button>
+            <button onClick={() => { saveAlbum(); setMobileMenuOpen(false) }} disabled={!isDirty || saving} style={{ textAlign: 'left', padding: '12px 16px', background: isDirty ? 'none' : 'var(--bg-surface)', border: 'none', color: isDirty ? 'var(--text-secondary)' : 'var(--text-muted)', fontSize: '13px', fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all var(--transition-fast)', opacity: isDirty ? 1 : 0.6 }} onMouseEnter={e => { if (isDirty) { (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}} onMouseLeave={e => { if (isDirty) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}}>{saving ? 'Saving…' : isDirty ? '💾 Save' : '✓ Saved'}</button>
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: '4px', paddingTop: '4px' }}>
+              <button onClick={() => toggle()} style={{ width: '100%', textAlign: 'left', padding: '12px 16px', background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '13px', fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all var(--transition-fast)' }} onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }} onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>{theme === 'dark' ? '☀️ Light' : '🌙 Dark'}</button>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile simplified flow */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '16px' }}>
+          {photos.length === 0 ? (
+            // Step 1: Upload
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', gap: '16px' }}>
+              <div style={{ fontSize: '48px' }}>📸</div>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: 500, color: 'var(--text-primary)' }}>Upload Photos</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: '280px' }}>Add photos to your album. You can arrange them with AI or manually.</p>
+              <div {...getRootProps()} className={`dropzone ${isDragActive ? 'active' : ''}`} style={{ width: '100%', maxWidth: '240px', padding: '20px 12px', marginTop: '8px' }}>
+                <input {...getInputProps()} />
+                {uploadProgress !== null ? (
+                  <div>
+                    <div className="progress-bar" style={{ marginBottom: '6px' }}>
+                      <div className="progress-bar-fill" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{uploadProgress}%</p>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '20px', marginBottom: '6px' }}>📁</div>
+                    <p style={{ fontSize: '12px', color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{isDragActive ? 'Drop here' : 'Tap to select'}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            // Step 2: AI Layout or Manual
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '16px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                  Photos ({photos.length})
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {photos.map(photo => (
+                    <div key={photo.id} style={{ aspectRatio: '1', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--bg-tertiary)', border: '1px solid var(--border)' }}>
+                      <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {!hasElements && (
+                <>
+                  <button className="btn btn-ai" onClick={() => setShowAIGenerate(true)} disabled={aiGenerating} style={{ width: '100%', gap: '8px', height: '44px', fontSize: '14px', justifyContent: 'center', fontWeight: 500 }}>
+                    {aiGenerating ? <span className="spinner" style={{ width: '14px', height: '14px', borderTopColor: 'var(--accent)' }} /> : '✨'}
+                    {aiGenerating ? 'Generating Layout…' : 'Generate Layout with AI'}
+                  </button>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', fontFamily: 'var(--font-body)' }}>Describe your album style and Claude will create a beautiful layout</p>
+                </>
+              )}
+
+              {hasElements && (
+                <>
+                  <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '12px', textAlign: 'center' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'var(--font-body)' }}>Layout created! {album?.pages.length} pages</p>
+                    {!showPreview && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => setShowPreview(true)} style={{ width: '100%', marginTop: '8px', height: '32px' }}>Preview Album</button>
+                    )}
+                  </div>
+
+                  {hasElements && (
+                    <button className="btn btn-secondary" onClick={() => setShowAIRefine(true)} disabled={aiRefining} style={{ width: '100%', gap: '8px', height: '40px', fontSize: '13px', justifyContent: 'center' }}>
+                      {aiRefining ? '✨ Restyling…' : '✨ Adjust Style'}
+                    </button>
+                  )}
+
+                  <button className="btn btn-primary" onClick={() => setShowExport(true)} style={{ width: '100%', gap: '6px', height: '44px', fontSize: '14px', justifyContent: 'center' }}>
+                    📥 Export as PDF
+                  </button>
+
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', fontFamily: 'var(--font-body)', padding: '8px' }}>💡 <strong>Tip:</strong> For detailed editing, use a tablet or desktop</p>
+                </>
+              )}
+
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '8px' }}>
+                <button className="btn btn-secondary" onClick={() => { getRootProps().onClick?.({} as any) }} style={{ width: '100%', height: '36px', fontSize: '12px' }}>+ Add More Photos</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Modals */}
+        {showAIGenerate && <AIGenerateModal onClose={() => setShowAIGenerate(false)} onGenerate={generateAILayout} loading={aiGenerating} />}
+        {showAIRefine && <AIRefineModal onClose={() => setShowAIRefine(false)} onRefine={refineWithAI} loading={aiRefining} />}
+        {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExportPDF} />}
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
