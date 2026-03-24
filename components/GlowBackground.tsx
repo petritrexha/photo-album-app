@@ -81,7 +81,7 @@ const BLOB_STYLE: React.CSSProperties = {
   borderRadius: '50%',
   pointerEvents: 'none',
   zIndex: 0,
-  filter: 'blur(80px)',
+  filter: 'blur(100px)',
   transition: 'opacity 1.2s ease',
 }
 
@@ -98,7 +98,7 @@ export default function GlowBackground({ pathname }: { pathname: string }) {
         ...BLOB_STYLE,
         width: config.sizeA, height: config.sizeA,
         top: config.topA, left: config.leftA,
-        background: `radial-gradient(circle, ${config.colorA ?? 'rgba(212,140,58,0.08)'} 0%, transparent 70%)`,
+        background: `radial-gradient(circle, ${config.colorA ?? 'rgba(212,140,58,0.08)'} 0%, ${config.colorA ?? 'rgba(212,140,58,0.08)'} 40%, transparent 75%)`,
         animation: 'glowDrift1 18s ease-in-out infinite alternate',
       }} />
 
@@ -107,7 +107,7 @@ export default function GlowBackground({ pathname }: { pathname: string }) {
         ...BLOB_STYLE,
         width: config.sizeB, height: config.sizeB,
         top: config.topB, right: config.rightB,
-        background: `radial-gradient(circle, ${config.colorB ?? 'rgba(212,140,58,0.05)'} 0%, transparent 70%)`,
+        background: `radial-gradient(circle, ${config.colorB ?? 'rgba(212,140,58,0.05)'} 0%, ${config.colorB ?? 'rgba(212,140,58,0.05)'} 40%, transparent 75%)`,
         animation: 'glowDrift2 22s ease-in-out infinite alternate',
       }} />
 
@@ -117,7 +117,7 @@ export default function GlowBackground({ pathname }: { pathname: string }) {
           ...BLOB_STYLE,
           width: config.sizeC, height: config.sizeC,
           top: config.topC, left: config.leftC,
-          background: `radial-gradient(circle, ${config.colorC ?? 'rgba(168,108,40,0.04)'} 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${config.colorC ?? 'rgba(168,108,40,0.04)'} 0%, ${config.colorC ?? 'rgba(168,108,40,0.04)'} 40%, transparent 75%)`,
           animation: 'glowDrift3 26s ease-in-out infinite alternate',
         }} />
       )}

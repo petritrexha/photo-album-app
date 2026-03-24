@@ -550,12 +550,23 @@ export default function AlbumEditorPage() {
   savingRef.current = saving
   const frameInputRef = useRef<HTMLInputElement>(null)
 
+  // Mobile detection (hoisted earlier to keep hook order stable)
+  const [isMobile, setIsMobile] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
   // ── Category config ─────────────────────────────────────────────
   const categoryId  = album ? detectCategoryFromTitle(album.title) : 'photo-book'
   const catConfig   = getCategoryConfig(categoryId)
 
   // ── Load ──────────────────────────────────────────────────────────
   useEffect(() => { loadAlbum() }, [albumId, loadAttempt])
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   async function loadAlbum() {
     setLoadError(null)
@@ -799,17 +810,6 @@ export default function AlbumEditorPage() {
       <span>{label}</span>
     </button>
   )
-
-  // Mobile detection
-  const [isMobile, setIsMobile] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768)
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
 
   // Mobile simplified view
   if (isMobile) {

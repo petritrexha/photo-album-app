@@ -52,7 +52,7 @@ Upload photos, describe a style, and Folio generates a complete layout. You can 
 ## Getting Started
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/folio.git
+git clone https://github.com/petritrexha/photo-album-app.git
 cd folio
 npm install --legacy-peer-deps
 cp .env.example .env.local
