@@ -706,6 +706,8 @@ export default function AlbumEditorPage() {
           pageCount: Math.max(Math.ceil(photos.length / 3), 1),
           prompt: `${catConfig.aiPromptHint} ${prompt}`,
           mode: 'generate',
+          canvasW: catConfig.canvasW,
+          canvasH: catConfig.canvasH,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`)

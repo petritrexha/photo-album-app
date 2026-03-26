@@ -1,200 +1,544 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const CANVAS_W = 800
-const CANVAS_H = 600
-const MARGIN = 32
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYOUT TEMPLATE SYSTEM
+//
+// Instead of asking Claude to invent pixel coordinates (which produces chaotic
+// results), we define a library of pre-tested, visually balanced layouts.
+// Claude only decides:
+//   1. Which template to use for each page
+//   2. Which photo goes in which slot
+//   3. Background colour + caption text + caption styling
+//
+// All coordinates are expressed as percentages (0–1) of canvas dimensions so
+// the same templates work across all canvas sizes (portrait, landscape, square).
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Rate limiter — more lenient for production use ─────────────────
-// NOTE: In-memory only — resets on Vercel cold start.
-// For persistent rate limiting, replace with Upstash Redis.
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT  = 30          // 30 requests …
-const RATE_WINDOW = 5 * 60_000  // … per 5 minutes per user
+const M = 0.04 // standard margin — 4 % of canvas dimension
 
-function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now()
-  const entry = rateLimitMap.get(userId)
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW })
-    return { allowed: true, remaining: RATE_LIMIT - 1 }
-  }
-  if (entry.count >= RATE_LIMIT) {
-    return { allowed: false, remaining: 0 }
-  }
-  entry.count++
-  return { allowed: true, remaining: RATE_LIMIT - entry.count }
+type SlotDef = {
+  key: string
+  xP: number; yP: number   // left, top — fraction of canvas
+  wP: number; hP: number   // width, height — fraction of canvas
+  rot?: number             // optional pre-set rotation in degrees
 }
 
-// ── Schema validation ──────────────────────────────────────────────
-function isValidLayout(obj: unknown): obj is { pages: any[] } {
+type CaptionZoneDef = {
+  xP: number; yP: number
+  wP: number; hP: number
+  align: 'left' | 'center' | 'right'
+} | null
+
+type TemplateDef = {
+  id: string
+  label: string
+  description: string
+  photoCount: number  // exact number of photos this template requires
+  slots: SlotDef[]
+  captionZone: CaptionZoneDef
+}
+
+// ── Template Library ──────────────────────────────────────────────────────────
+const TEMPLATES: TemplateDef[] = [
+  // ── Single photo ─────────────────────────────────────────────────────
+  {
+    id: 'full-bleed',
+    label: 'Full bleed',
+    description: 'One photo fills the entire canvas edge-to-edge',
+    photoCount: 1,
+    slots: [{ key: 'A', xP: 0, yP: 0, wP: 1, hP: 1 }],
+    captionZone: null,
+  },
+  {
+    id: 'hero-caption',
+    label: 'Hero with caption strip',
+    description: 'Photo takes 85 % of canvas height; text caption strip at bottom',
+    photoCount: 1,
+    slots: [{ key: 'A', xP: 0, yP: 0, wP: 1, hP: 0.85 }],
+    captionZone: { xP: M, yP: 0.87, wP: 1 - M * 2, hP: 0.10, align: 'center' },
+  },
+  {
+    id: 'centered-mat',
+    label: 'Centered with mat border',
+    description: 'Photo centered with generous margin on all sides, like a matted print',
+    photoCount: 1,
+    slots: [{ key: 'A', xP: 0.14, yP: 0.07, wP: 0.72, hP: 0.78 }],
+    captionZone: { xP: 0.14, yP: 0.87, wP: 0.72, hP: 0.09, align: 'center' },
+  },
+
+  // ── Two photos ───────────────────────────────────────────────────────
+  {
+    id: 'side-by-side',
+    label: 'Two equal columns',
+    description: 'Two photos side by side with a slim gap between them',
+    photoCount: 2,
+    slots: [
+      { key: 'A', xP: M, yP: M, wP: 0.46, hP: 1 - M * 2 },
+      { key: 'B', xP: 0.54, yP: M, wP: 0.42, hP: 1 - M * 2 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'stacked-rows',
+    label: 'Two stacked rows',
+    description: 'Two landscape photos stacked vertically with a slim gap',
+    photoCount: 2,
+    slots: [
+      { key: 'A', xP: M, yP: M, wP: 1 - M * 2, hP: 0.45 },
+      { key: 'B', xP: M, yP: 0.53, wP: 1 - M * 2, hP: 0.43 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'left-dominant',
+    label: 'Large left, accent right',
+    description: 'Dominant photo on the left, smaller accent photo centered on the right',
+    photoCount: 2,
+    slots: [
+      { key: 'A', xP: M, yP: M, wP: 0.56, hP: 1 - M * 2 },
+      { key: 'B', xP: 0.64, yP: 0.27, wP: 0.32, hP: 0.46 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'right-dominant',
+    label: 'Accent left, large right',
+    description: 'Small accent photo centered on the left, dominant photo on the right',
+    photoCount: 2,
+    slots: [
+      { key: 'A', xP: M, yP: 0.27, wP: 0.32, hP: 0.46 },
+      { key: 'B', xP: 0.38, yP: M, wP: 0.58, hP: 1 - M * 2 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'scrapbook-pair',
+    label: 'Scrapbook overlap pair',
+    description: 'Two photos with intentional overlap and slight rotations — casual, playful feel',
+    photoCount: 2,
+    slots: [
+      { key: 'A', xP: 0.04, yP: 0.06, wP: 0.52, hP: 0.80, rot: -2.5 },
+      { key: 'B', xP: 0.40, yP: 0.14, wP: 0.54, hP: 0.76, rot: 2 },
+    ],
+    captionZone: null,
+  },
+
+  // ── Three photos ─────────────────────────────────────────────────────
+  {
+    id: 'three-col',
+    label: 'Three equal columns',
+    description: 'Three photos in equal vertical columns',
+    photoCount: 3,
+    slots: [
+      { key: 'A', xP: M, yP: 0.08, wP: 0.29, hP: 0.84 },
+      { key: 'B', xP: 0.355, yP: 0.08, wP: 0.29, hP: 0.84 },
+      { key: 'C', xP: 0.665, yP: 0.08, wP: 0.29, hP: 0.84 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'hero-pair-below',
+    label: 'Hero above, two below',
+    description: 'Large hero photo top half, two equal photos bottom half',
+    photoCount: 3,
+    slots: [
+      { key: 'A', xP: M, yP: M, wP: 1 - M * 2, hP: 0.53 },
+      { key: 'B', xP: M, yP: 0.61, wP: 0.46, hP: 0.33 },
+      { key: 'C', xP: 0.54, yP: 0.61, wP: 0.42, hP: 0.33 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'two-stack-right',
+    label: 'Tall left, two stacked right',
+    description: 'Tall portrait photo left, two stacked photos right',
+    photoCount: 3,
+    slots: [
+      { key: 'A', xP: M, yP: M, wP: 0.46, hP: 1 - M * 2 },
+      { key: 'B', xP: 0.54, yP: M, wP: 0.42, hP: 0.45 },
+      { key: 'C', xP: 0.54, yP: 0.53, wP: 0.42, hP: 0.43 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'scrapbook-trio',
+    label: 'Scrapbook three overlap',
+    description: 'Three overlapping photos with slight rotations — warm, casual, memory-book feel',
+    photoCount: 3,
+    slots: [
+      { key: 'A', xP: 0.04, yP: 0.05, wP: 0.50, hP: 0.74, rot: -2 },
+      { key: 'B', xP: 0.44, yP: 0.08, wP: 0.50, hP: 0.72, rot: 1.5 },
+      { key: 'C', xP: 0.22, yP: 0.26, wP: 0.48, hP: 0.66, rot: -1 },
+    ],
+    captionZone: null,
+  },
+
+  // ── Four photos ──────────────────────────────────────────────────────
+  {
+    id: 'quad-grid',
+    label: '2×2 grid',
+    description: 'Classic four-photo grid — balanced, editorial',
+    photoCount: 4,
+    slots: [
+      { key: 'A', xP: M, yP: M, wP: 0.46, hP: 0.44 },
+      { key: 'B', xP: 0.54, yP: M, wP: 0.42, hP: 0.44 },
+      { key: 'C', xP: M, yP: 0.52, wP: 0.46, hP: 0.44 },
+      { key: 'D', xP: 0.54, yP: 0.52, wP: 0.42, hP: 0.44 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'dominant-left-three',
+    label: 'Large left, three stacked right',
+    description: 'Dominant photo occupying the left, three equal stacked right',
+    photoCount: 4,
+    slots: [
+      { key: 'A', xP: M, yP: M, wP: 0.55, hP: 1 - M * 2 },
+      { key: 'B', xP: 0.63, yP: M, wP: 0.33, hP: 0.28 },
+      { key: 'C', xP: 0.63, yP: 0.36, wP: 0.33, hP: 0.28 },
+      { key: 'D', xP: 0.63, yP: 0.68, wP: 0.33, hP: 0.28 },
+    ],
+    captionZone: null,
+  },
+  {
+    id: 'filmstrip',
+    label: 'Filmstrip four',
+    description: 'Four photos in a horizontal filmstrip, vertically centered',
+    photoCount: 4,
+    slots: [
+      { key: 'A', xP: M, yP: 0.15, wP: 0.21, hP: 0.70 },
+      { key: 'B', xP: 0.29, yP: 0.15, wP: 0.21, hP: 0.70 },
+      { key: 'C', xP: 0.54, yP: 0.15, wP: 0.21, hP: 0.70 },
+      { key: 'D', xP: 0.79, yP: 0.15, wP: 0.17, hP: 0.70 },
+    ],
+    captionZone: null,
+  },
+]
+
+const TEMPLATE_MAP: Record<string, TemplateDef> = Object.fromEntries(
+  TEMPLATES.map(t => [t.id, t])
+)
+
+// ── Validated response type from Claude ───────────────────────────────────────
+type CaptionStyle = {
+  fill: string
+  fontFamily: string
+  fontSize: number
+  align: 'left' | 'center' | 'right'
+  fontStyle: string
+}
+
+type GeneratePage = {
+  template: string
+  background: string
+  photoAssignment: Record<string, string> // slot key → photoId
+  caption: string | null
+  captionStyle: CaptionStyle
+}
+
+type RefinePageUpdate = {
+  pageIndex: number
+  background: string
+  textUpdates: Array<{
+    elementId: string
+    text: string
+    fontSize: number
+    fill: string
+    fontFamily: string
+    fontStyle: string
+    align: 'left' | 'center' | 'right'
+    lineHeight: number
+    rotation: number
+  }>
+  newTextElements: Array<{
+    id: string
+    type: 'text'
+    text: string
+    x: number; y: number
+    width: number; height: number
+    fontSize: number; fill: string
+    fontFamily: string; fontStyle: string
+    align: 'left' | 'center' | 'right'
+    lineHeight: number; rotation: number
+  }>
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+function isValidGenerateResponse(obj: unknown): obj is { pages: GeneratePage[] } {
   if (!obj || typeof obj !== 'object') return false
   const o = obj as Record<string, unknown>
   if (!Array.isArray(o.pages) || o.pages.length === 0) return false
-  for (const page of o.pages) {
-    if (!page || typeof page !== 'object') return false
-    if (!Array.isArray(page.elements)) return false
+  for (const page of o.pages as GeneratePage[]) {
+    if (typeof page.template !== 'string') return false
+    if (!(page.template in TEMPLATE_MAP)) return false
     if (typeof page.background !== 'string') return false
-    for (const el of page.elements) {
-      if (!el || typeof el !== 'object') return false
-      if (el.type !== 'image' && el.type !== 'text') return false
-      if (typeof el.x !== 'number' || typeof el.y !== 'number') return false
-      if (typeof el.width !== 'number' || typeof el.height !== 'number') return false
+    if (!page.photoAssignment || typeof page.photoAssignment !== 'object') return false
+    // Check that slot keys match what the template expects
+    const tmpl = TEMPLATE_MAP[page.template]
+    for (const slot of tmpl.slots) {
+      if (!page.photoAssignment[slot.key]) return false
     }
   }
   return true
 }
 
-function isValidRefinement(obj: unknown): obj is { pages: any[] } {
+function isValidRefineResponse(obj: unknown): obj is { pages: RefinePageUpdate[] } {
   if (!obj || typeof obj !== 'object') return false
   const o = obj as Record<string, unknown>
   if (!Array.isArray(o.pages) || o.pages.length === 0) return false
-  for (const page of o.pages) {
-    if (!page || typeof page !== 'object') return false
+  for (const page of o.pages as RefinePageUpdate[]) {
+    if (typeof page.pageIndex !== 'number') return false
     if (typeof page.background !== 'string') return false
     if (!Array.isArray(page.textUpdates)) return false
+    if (!Array.isArray(page.newTextElements)) return false
   }
   return true
 }
 
-const CLAUDE_MODEL = 'claude-haiku-4-5-20251001'
+// ── Template → PageElement expansion ─────────────────────────────────────────
+function expandTemplate(
+  template: TemplateDef,
+  canvasW: number,
+  canvasH: number,
+  photoAssignment: Record<string, string>,
+  photoUrlMap: Record<string, string>,
+  caption: string | null,
+  captionStyle: CaptionStyle
+): unknown[] {
+  const elements: unknown[] = []
 
-export async function POST(req: NextRequest) {
-  // 1. Auth check — use getUser with the Bearer token
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.replace('Bearer ', '').trim()
-
-  if (!token) {
-    return NextResponse.json(
-      { error: 'Not authenticated. Please sign in and try again.' },
-      { status: 401 }
-    )
+  // Photo slots
+  for (const slot of template.slots) {
+    const photoId = photoAssignment[slot.key]
+    if (!photoId) continue
+    const url = photoUrlMap[photoId]
+    if (!url) continue
+    elements.push({
+      id: crypto.randomUUID(),
+      type: 'image',
+      photoId,
+      url,
+      x: Math.round(slot.xP * canvasW),
+      y: Math.round(slot.yP * canvasH),
+      width: Math.round(slot.wP * canvasW),
+      height: Math.round(slot.hP * canvasH),
+      rotation: slot.rot ?? 0,
+    })
   }
 
-  // Create a Supabase client that uses the user's token
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    }
-  )
-
-  // Validate the session — getUser() verifies against Supabase auth server
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return NextResponse.json(
-      { error: 'Session expired. Please sign in again.' },
-      { status: 401 }
-    )
+  // Caption element
+  const cz = template.captionZone
+  if (caption) {
+    const x = cz ? Math.round(cz.xP * canvasW) : Math.round(M * canvasW)
+    const y = cz ? Math.round(cz.yP * canvasH) : Math.round(0.88 * canvasH)
+    const w = cz ? Math.round(cz.wP * canvasW) : Math.round((1 - M * 2) * canvasW)
+    const h = cz ? Math.round(cz.hP * canvasH) : Math.round(0.09 * canvasH)
+    const align = captionStyle.align || cz?.align || 'center'
+    elements.push({
+      id: crypto.randomUUID(),
+      type: 'text',
+      text: caption,
+      x, y, width: w, height: h,
+      fontSize: captionStyle.fontSize,
+      fill: captionStyle.fill,
+      fontFamily: captionStyle.fontFamily,
+      fontStyle: captionStyle.fontStyle,
+      align,
+      lineHeight: 1.4,
+      rotation: 0,
+    })
   }
 
-  // 2. Rate limit
-  const { allowed, remaining } = checkRateLimit(user.id)
-  if (!allowed) {
-    return NextResponse.json(
-      { error: 'You have made too many AI requests. Please wait a few minutes and try again.' },
-      { status: 429, headers: { 'X-RateLimit-Remaining': '0' } }
-    )
-  }
+  return elements
+}
 
-  // 3. Parse body
-  const body = await req.json()
-  const { photos, pageCount, prompt, mode, currentPages } = body
+// ── System prompts ────────────────────────────────────────────────────────────
+function buildGenerateSystemPrompt(canvasW: number, canvasH: number): string {
+  const templateMenu = TEMPLATES
+    .map(t => `  "${t.id}" — ${t.photoCount} photo${t.photoCount > 1 ? 's' : ''} — ${t.description}`)
+    .join('\n')
 
-  // 4. Sanitize prompt
-  const sanitizedPrompt = prompt
-    ? prompt.replace(/[<>{}]/g, '').slice(0, 500)
-    : null
+  return `You are an expert photo album layout designer.
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: 'AI service is not configured. Please contact the administrator.' },
-      { status: 500 }
-    )
-  }
+Canvas: ${canvasW}×${canvasH}px.
 
-  // ── REFINE MODE ──────────────────────────────────────────────────
-  if (mode === 'refine') {
-    if (!currentPages || !Array.isArray(currentPages) || currentPages.length === 0) {
-      return NextResponse.json(
-        { error: 'No existing pages to refine. Generate the album first.' },
-        { status: 400 }
-      )
-    }
+AVAILABLE TEMPLATES (choose one per page):
+${templateMenu}
 
-    const styleInstruction = sanitizedPrompt
-      ? `The user wants this style/mood: "${sanitizedPrompt}". Apply it to all design decisions below.`
-      : 'Refine the album with a clean, modern editorial style.'
+FONT OPTIONS (use exact strings):
+  "Playfair Display, serif"
+  "Cormorant Garamond, serif"
+  "Georgia, serif"
+  "DM Sans, sans-serif"
+  "Helvetica Neue, sans-serif"
+  "Courier New, monospace"
 
-    const refineSystemPrompt = `You are an expert photo album designer. You will receive a description of photo album pages currently on the canvas. Your job is to REFINE the style — changing backgrounds, text captions, font families, font sizes, text colors, and rotations — WITHOUT moving or removing any photos or changing their positions/sizes.
+TASK: Plan a multi-page album. For each page choose a template, assign photo IDs
+to its named slots, and specify background colour + optional caption.
 
-You output ONLY valid JSON — no markdown fences, no explanation, no other text.
-
-Output schema:
+OUTPUT — valid JSON ONLY, no markdown, no explanation, no code fences:
 {
   "pages": [
     {
-      "pageIndex": number,
-      "background": "hex color string",
-      "textUpdates": [
-        {
-          "elementId": "string (the existing element id)",
-          "text": "new caption string",
-          "fontSize": number,
-          "fill": "hex color",
-          "fontFamily": "string",
-          "fontStyle": "italic|bold|empty string",
-          "align": "left|center|right",
-          "lineHeight": number,
-          "rotation": number
-        }
-      ],
-      "newTextElements": [
-        {
-          "id": "string (new uid like t1, t2...)",
-          "type": "text",
-          "text": "string",
-          "x": number,
-          "y": number,
-          "width": number,
-          "height": number,
-          "fontSize": number,
-          "fill": "hex color",
-          "fontFamily": "string",
-          "fontStyle": "string",
-          "align": "left|center|right",
-          "lineHeight": number,
-          "rotation": number
-        }
-      ]
+      "template": "<template-id>",
+      "background": "<hex-color>",
+      "photoAssignment": { "A": "<photo-id>", "B": "<photo-id>" },
+      "caption": "<3–8 evocative words>  OR  null",
+      "captionStyle": {
+        "fill": "<hex-color>",
+        "fontFamily": "<exact font string from list above>",
+        "fontSize": <number 12–32>,
+        "align": "<left|center|right>",
+        "fontStyle": "<italic|bold|>"
+      }
     }
   ]
 }
 
-Font options: "Playfair Display, serif" | "DM Sans, sans-serif" | "Georgia, serif" | "Helvetica Neue, sans-serif" | "Courier New, monospace"
-Canvas: ${CANVAS_W}x${CANVAS_H}px
-Output ONLY the JSON object. Nothing else.`
+STRICT RULES:
+1. "photoAssignment" MUST contain exactly the slot keys the template defines — no extras, no omissions.
+2. Use EVERY provided photo ID at least once across all pages.
+3. NEVER use the same template on two consecutive pages — vary the layouts.
+4. First page should feel like a cover — prefer "hero-caption" or "full-bleed" with a strong caption.
+5. Scrapbook templates ("scrapbook-pair", "scrapbook-trio") suit casual, warm occasions.
+6. Clean grid templates ("quad-grid", "three-col", "side-by-side") suit minimal or formal styles.
+7. Background + caption fill must have strong contrast. Dark background → light text. Light background → dark text.
+8. "caption" is optional — use null when the photo speaks for itself. Use it on first/last pages and hero-caption template.
+9. Do not put captions on "full-bleed" unless the mood strongly calls for it.`
+}
 
+const REFINE_SYSTEM_PROMPT = `You are an expert photo album stylist.
+You receive a description of an existing album layout and must RESTYLE it — changing
+backgrounds, fonts, colours, and captions — WITHOUT moving or resizing any photo element.
+
+FONT OPTIONS (use exact strings):
+  "Playfair Display, serif" | "Cormorant Garamond, serif" | "Georgia, serif"
+  "DM Sans, sans-serif" | "Helvetica Neue, sans-serif" | "Courier New, monospace"
+
+OUTPUT — valid JSON ONLY, no markdown, no code fences:
+{
+  "pages": [
+    {
+      "pageIndex": <number>,
+      "background": "<hex-color>",
+      "textUpdates": [
+        {
+          "elementId": "<existing element id>",
+          "text": "<new caption>",
+          "fontSize": <number>,
+          "fill": "<hex-color>",
+          "fontFamily": "<exact font string>",
+          "fontStyle": "<italic|bold|>",
+          "align": "<left|center|right>",
+          "lineHeight": <number 1.2–1.8>,
+          "rotation": <number>
+        }
+      ],
+      "newTextElements": []
+    }
+  ]
+}
+
+STRICT RULES:
+1. Do NOT change any image element — never include image elements in your response.
+2. Do NOT change x, y, width, or height of any element.
+3. Update the background colour for EVERY page.
+4. Update ALL existing text elements (improve the caption text to match the new mood).
+5. "newTextElements" should be an empty array — do not add new elements.
+6. Ensure strong contrast: background vs text fill.`
+
+// ── Rate limiter ──────────────────────────────────────────────────────────────
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT = 30
+const RATE_WINDOW = 5 * 60_000
+
+function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
+  const now = Date.now()
+  const entry = rateLimitMap.get(userId)
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW })
+    return { allowed: true, remaining: RATE_LIMIT - 1 }
+  }
+  if (entry.count >= RATE_LIMIT) return { allowed: false, remaining: 0 }
+  entry.count++
+  return { allowed: true, remaining: RATE_LIMIT - entry.count }
+}
+
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001'
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+export async function POST(req: NextRequest) {
+  // ── Auth ────────────────────────────────────────────────────────────
+  const token = req.headers.get('authorization')?.replace('Bearer ', '').trim()
+  if (!token) {
+    return NextResponse.json({ error: 'Not authenticated. Please sign in and try again.' }, { status: 401 })
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  )
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Session expired. Please sign in again.' }, { status: 401 })
+  }
+
+  // ── Rate limit ──────────────────────────────────────────────────────
+  const { allowed } = checkRateLimit(user.id)
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Too many AI requests. Please wait a few minutes and try again.' },
+      { status: 429 }
+    )
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    return NextResponse.json({ error: 'AI service is not configured.' }, { status: 500 })
+  }
+
+  const body = await req.json()
+  const {
+    photos,
+    pageCount,
+    prompt,
+    mode,
+    currentPages,
+    canvasW = 800,
+    canvasH = 600,
+  } = body
+
+  const sanitizedPrompt = prompt
+    ? String(prompt).replace(/[<>{}]/g, '').slice(0, 500)
+    : ''
+
+  // ════════════════════════════════════════════════════════════════════
+  // REFINE MODE — restyle colours/fonts/captions, preserve photo positions
+  // ════════════════════════════════════════════════════════════════════
+  if (mode === 'refine') {
+    if (!currentPages || !Array.isArray(currentPages) || currentPages.length === 0) {
+      return NextResponse.json({ error: 'No existing pages to refine.' }, { status: 400 })
+    }
+
+    const styleInstruction = sanitizedPrompt
+      ? `Style direction from user: "${sanitizedPrompt}". Apply this mood to every design decision.`
+      : 'Refine with a clean, modern editorial style.'
+
+    // Describe current layout to Claude (text elements only — photos are never moved)
     const pageDescriptions = currentPages.map((page: any, i: number) => {
-      const existingTexts = page.elements
+      const textEls = page.elements
         .filter((el: any) => el.type === 'text')
-        .map((el: any) => `    - text element id="${el.id}" current text="${el.text}" at x=${Math.round(el.x)} y=${Math.round(el.y)} w=${Math.round(el.width)}`)
-        .join('\n')
+        .map((el: any) =>
+          `    id="${el.id}" text="${el.text}" at x=${Math.round(el.x)} y=${Math.round(el.y)} w=${Math.round(el.width)}`
+        ).join('\n')
       const photoCount = page.elements.filter((el: any) => el.type === 'image').length
-      return `Page ${i} (pageIndex: ${i}): background="${page.background}", ${photoCount} photo(s)\n  Existing text elements:\n${existingTexts || '    (none)'}`
+      return `Page ${i} (pageIndex:${i}): background="${page.background}", ${photoCount} photo(s)\n${textEls || '    (no text elements)'}`
     }).join('\n\n')
 
-    const refineUserMessage = `${styleInstruction}
-
-Here are the current album pages:
-
-${pageDescriptions}
-
-Refine the style of all ${currentPages.length} pages. For each page provide a new background color, update all existing text elements with better captions and styling, and optionally add new text elements. Do NOT add image elements. Do NOT change photo positions or sizes.`
+    const userMsg = `${styleInstruction}\n\nCurrent album pages:\n\n${pageDescriptions}\n\nRefine all ${currentPages.length} pages. Change backgrounds and update/improve all existing captions to match the new mood. Do NOT change photo positions.`
 
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -208,17 +552,16 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
           model: CLAUDE_MODEL,
           max_tokens: 8192,
           temperature: 1,
-          system: refineSystemPrompt,
-          messages: [{ role: 'user', content: refineUserMessage }],
+          system: REFINE_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userMsg }],
         }),
       })
 
       if (!res.ok) {
-        const errBody = await res.text()
-        console.error('Claude refine error:', res.status, errBody)
-        if (res.status === 529 || res.status === 503) {
-          throw new Error('The AI service is temporarily overloaded. Please try again in a moment.')
-        }
+        const txt = await res.text()
+        console.error('Claude refine error:', res.status, txt)
+        if (res.status === 529 || res.status === 503)
+          throw new Error('AI service is overloaded. Please try again in a moment.')
         throw new Error(`AI service error (${res.status})`)
       }
 
@@ -227,136 +570,86 @@ Refine the style of all ${currentPages.length} pages. For each page provide a ne
       const cleaned = rawText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
 
       let refinement: unknown
-      try {
-        refinement = JSON.parse(cleaned)
-      } catch {
+      try { refinement = JSON.parse(cleaned) } catch {
         console.error('Refine JSON parse failed:', rawText.slice(0, 500))
         throw new Error('AI returned an invalid response. Please try again.')
       }
 
-      if (!isValidRefinement(refinement)) {
-        console.error('Refinement schema invalid:', JSON.stringify(refinement).slice(0, 500))
+      if (!isValidRefineResponse(refinement)) {
+        console.error('Refine validation failed:', JSON.stringify(refinement).slice(0, 500))
         throw new Error('AI response structure was invalid. Please try again.')
       }
 
       const refinedPages = currentPages.map((page: any, pageIndex: number) => {
-        const update = (refinement as any).pages.find((p: any) => p.pageIndex === pageIndex)
+        const update = refinement.pages.find((p: RefinePageUpdate) => p.pageIndex === pageIndex)
         if (!update) return page
 
         const updatedElements = page.elements.map((el: any) => {
           if (el.type !== 'text') return el
-          const textUpdate = update.textUpdates?.find((t: any) => t.elementId === el.id)
-          if (!textUpdate) return el
+          const tu = update.textUpdates?.find((t: any) => t.elementId === el.id)
+          if (!tu) return el
           return {
             ...el,
-            text: textUpdate.text ?? el.text,
-            fontSize: textUpdate.fontSize ?? el.fontSize,
-            fill: textUpdate.fill ?? el.fill,
-            fontFamily: textUpdate.fontFamily ?? el.fontFamily,
-            fontStyle: textUpdate.fontStyle ?? el.fontStyle,
-            align: textUpdate.align ?? el.align,
-            lineHeight: textUpdate.lineHeight ?? el.lineHeight,
-            rotation: textUpdate.rotation ?? el.rotation,
+            text: tu.text ?? el.text,
+            fontSize: tu.fontSize ?? el.fontSize,
+            fill: tu.fill ?? el.fill,
+            fontFamily: tu.fontFamily ?? el.fontFamily,
+            fontStyle: tu.fontStyle ?? el.fontStyle,
+            align: tu.align ?? el.align,
+            lineHeight: tu.lineHeight ?? el.lineHeight,
+            rotation: tu.rotation ?? el.rotation,
           }
         })
-
-        const newTextEls = (update.newTextElements || []).map((el: any) => ({
-          ...el,
-          id: crypto.randomUUID(),
-          type: 'text' as const,
-        }))
 
         return {
           ...page,
           background: update.background ?? page.background,
-          elements: [...updatedElements, ...newTextEls],
+          elements: updatedElements,
         }
       })
 
       return NextResponse.json({ pages: refinedPages })
-
     } catch (err: any) {
       console.error('AI refine error:', err)
-      return NextResponse.json(
-        { error: err.message || 'Could not refine the album. Please try again.' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: err.message || 'Could not refine the album.' }, { status: 500 })
     }
   }
 
-  // ── GENERATE MODE ────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════
+  // GENERATE MODE — template-based full album generation
+  // ════════════════════════════════════════════════════════════════════
   if (!photos || photos.length === 0) {
-    return NextResponse.json(
-      { error: 'No photos provided. Please upload at least one photo first.' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'No photos provided. Upload at least one photo first.' }, { status: 400 })
   }
 
-  const generateStyleInstruction = sanitizedPrompt
-    ? `The user wants this style/mood: "${sanitizedPrompt}". Apply this to every design decision — colors, fonts, spacing, layout style, caption tone.`
-    : 'Use a clean, modern editorial style.'
+  // Build a photo map: id → url
+  const photoUrlMap: Record<string, string> = {}
+  for (const p of photos) { photoUrlMap[p.id] = p.url }
 
-  const generateSystemPrompt = `You are an expert photo album designer. You output ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.
+  // Decide how many pages to target (guided by photo count)
+  const targetPages = Math.max(
+    Math.min(pageCount || Math.ceil(photos.length / 2), 12),
+    1
+  )
 
-The JSON must strictly follow this schema:
-{
-  "pages": [
-    {
-      "id": "string (uid)",
-      "background": "string (hex color like #1a1a1a)",
-      "elements": [
-        {
-          "id": "string (uid)",
-          "type": "image",
-          "photoId": "string (exact photo id from the provided list)",
-          "url": "__PLACEHOLDER__",
-          "x": number,
-          "y": number,
-          "width": number,
-          "height": number,
-          "rotation": number
-        },
-        {
-          "id": "string (uid)",
-          "type": "text",
-          "text": "string (short evocative caption 3–8 words)",
-          "x": number,
-          "y": number,
-          "width": number,
-          "height": number,
-          "fontSize": number,
-          "fill": "string (hex color)",
-          "fontFamily": "string",
-          "fontStyle": "string (e.g. italic, bold, or empty string)",
-          "align": "left|center|right",
-          "lineHeight": number,
-          "rotation": number
-        }
-      ]
-    }
-  ]
-}
+  const styleInstruction = sanitizedPrompt
+    ? `Style/mood: "${sanitizedPrompt}"`
+    : 'Style: clean, modern, editorial.'
 
-Design rules:
-- Canvas: ${CANVAS_W}x${CANVAS_H}px, margin: ${MARGIN}px
-- Vary layouts per page: single hero, two-column, three-photo grid, full-bleed, collage with slight rotations
-- Background: any hex color matching the mood (dark, light, warm, cool)
-- Font options: "Playfair Display, serif" | "DM Sans, sans-serif" | "Georgia, serif" | "Helvetica Neue, sans-serif" | "Courier New, monospace"
-- Text color must contrast well with the background
-- Slight rotations (−4 to 4 degrees) add personality for casual styles; keep 0 for minimal styles
-- Leave breathing room — don't overcrowd pages
-- Use ALL provided photo IDs across the pages
-- UIDs: use simple sequential ids like "p1", "e1", "e2" etc.
-- Output ONLY the JSON object. Nothing else.`
+  // List only templates that fit available photo count range
+  // (Claude might assign 1-4 photos per page)
+  const systemPrompt = buildGenerateSystemPrompt(canvasW, canvasH)
 
-  const generateUserMessage = `${generateStyleInstruction}
+  const userMsg = `${styleInstruction}
 
-Photos to use (use these exact IDs in photoId fields):
-${photos.map((p: any) => `- id: "${p.id}"`).join('\n')}
+Photos to distribute (use every ID at least once):
+${photos.map((p: any) => `- "${p.id}"`).join('\n')}
 
-Number of pages to generate: ${pageCount}
+Target page count: ${targetPages} pages.
+Distribute all ${photos.length} photos across ${targetPages} pages.
+Each page should use 1–4 photos. Choose templates that suit both the photo count and the mood.
 
-Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
+Return ONLY the JSON object.`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -370,17 +663,16 @@ Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
         model: CLAUDE_MODEL,
         max_tokens: 8192,
         temperature: 1,
-        system: generateSystemPrompt,
-        messages: [{ role: 'user', content: generateUserMessage }],
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMsg }],
       }),
     })
 
     if (!res.ok) {
-      const errBody = await res.text()
-      console.error('Claude API error:', res.status, errBody)
-      if (res.status === 529 || res.status === 503) {
-        throw new Error('The AI service is temporarily overloaded. Please try again in a moment.')
-      }
+      const txt = await res.text()
+      console.error('Claude generate error:', res.status, txt)
+      if (res.status === 529 || res.status === 503)
+        throw new Error('AI service is overloaded. Please try again in a moment.')
       throw new Error(`AI service error (${res.status})`)
     }
 
@@ -389,38 +681,64 @@ Generate exactly ${pageCount} pages. Distribute all photos across the pages.`
     const cleaned = rawText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
 
     let layout: unknown
-    try {
-      layout = JSON.parse(cleaned)
-    } catch {
-      console.error('JSON parse failed. Raw text:', rawText.slice(0, 500))
+    try { layout = JSON.parse(cleaned) } catch {
+      console.error('Generate JSON parse failed:', rawText.slice(0, 600))
       throw new Error('AI returned an invalid response. Please try again.')
     }
 
-    if (!isValidLayout(layout)) {
-      console.error('Layout schema validation failed:', JSON.stringify(layout).slice(0, 500))
+    if (!isValidGenerateResponse(layout)) {
+      console.error('Generate validation failed:', JSON.stringify(layout).slice(0, 600))
       throw new Error('AI response structure was invalid. Please try again.')
     }
 
-    // Replace __PLACEHOLDER__ URLs with real photo URLs
-    const photoMap = Object.fromEntries(photos.map((p: any) => [p.id, p.url]))
+    // Expand templates → full PageElement arrays
+    const pages = layout.pages.map((p: GeneratePage) => {
+      const template = TEMPLATE_MAP[p.template]
+      // Graceful fallback if unknown template
+      if (!template) {
+        const firstId = Object.values(p.photoAssignment)[0]
+        return {
+          id: crypto.randomUUID(),
+          background: p.background || '#0f0f0f',
+          elements: firstId ? [{
+            id: crypto.randomUUID(),
+            type: 'image',
+            photoId: firstId,
+            url: photoUrlMap[firstId] || '',
+            x: 0, y: 0, width: canvasW, height: canvasH,
+            rotation: 0,
+          }] : [],
+        }
+      }
 
-    layout.pages = layout.pages.map((page: any) => ({
-      ...page,
-      id: crypto.randomUUID(),
-      elements: page.elements.map((el: any) => ({
-        ...el,
+      const defaultCaptionStyle: CaptionStyle = {
+        fill: '#f4f0ea',
+        fontFamily: 'Georgia, serif',
+        fontSize: 18,
+        align: 'center',
+        fontStyle: 'italic',
+      }
+
+      const elements = expandTemplate(
+        template,
+        canvasW,
+        canvasH,
+        p.photoAssignment,
+        photoUrlMap,
+        p.caption ?? null,
+        p.captionStyle ?? defaultCaptionStyle,
+      )
+
+      return {
         id: crypto.randomUUID(),
-        url: el.photoId ? (photoMap[el.photoId] || el.url) : el.url,
-      })),
-    }))
+        background: p.background,
+        elements,
+      }
+    })
 
-    return NextResponse.json({ pages: layout.pages })
-
+    return NextResponse.json({ pages })
   } catch (err: any) {
-    console.error('AI layout error:', err)
-    return NextResponse.json(
-      { error: err.message || 'Could not generate the album. Please try again.' },
-      { status: 500 }
-    )
+    console.error('AI generate error:', err)
+    return NextResponse.json({ error: err.message || 'Could not generate the album.' }, { status: 500 })
   }
 }
