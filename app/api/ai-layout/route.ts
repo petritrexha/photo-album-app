@@ -448,6 +448,32 @@ STRICT RULES:
 5. "newTextElements" should be an empty array — do not add new elements.
 6. Ensure strong contrast: background vs text fill.`
 
+// ── JSON extractor ───────────────────────────────────────────────────────────
+// Claude sometimes wraps JSON in prose or code fences despite instructions.
+// This finds the first complete {...} block in the response.
+function extractJSON(raw: string): string {
+  // First try stripping common code-fence patterns
+  const fenceStripped = raw
+    .replace(/^```(?:json)?\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim()
+  // If it starts with '{', use directly
+  if (fenceStripped.startsWith('{')) return fenceStripped
+
+  // Otherwise find the first '{' and the matching closing '}'
+  const start = raw.indexOf('{')
+  if (start === -1) return raw // will fail JSON.parse — that's fine
+  let depth = 0
+  for (let i = start; i < raw.length; i++) {
+    if (raw[i] === '{') depth++
+    else if (raw[i] === '}') {
+      depth--
+      if (depth === 0) return raw.slice(start, i + 1)
+    }
+  }
+  return raw.slice(start) // unclosed — will fail JSON.parse
+}
+
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT = 30
@@ -567,11 +593,12 @@ export async function POST(req: NextRequest) {
 
       const data = await res.json()
       const rawText: string = data.content?.[0]?.text || ''
-      const cleaned = rawText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
+      const cleaned = extractJSON(rawText)
+      console.log('[ai-layout refine] raw length:', rawText.length, '| extracted starts with:', cleaned.slice(0, 60))
 
       let refinement: unknown
       try { refinement = JSON.parse(cleaned) } catch {
-        console.error('Refine JSON parse failed:', rawText.slice(0, 500))
+        console.error('Refine JSON parse failed. Raw response:', rawText.slice(0, 800))
         throw new Error('AI returned an invalid response. Please try again.')
       }
 
@@ -678,11 +705,12 @@ Return ONLY the JSON object.`
 
     const data = await res.json()
     const rawText: string = data.content?.[0]?.text || ''
-    const cleaned = rawText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
+    const cleaned = extractJSON(rawText)
+    console.log('[ai-layout generate] raw length:', rawText.length, '| extracted starts with:', cleaned.slice(0, 60))
 
     let layout: unknown
     try { layout = JSON.parse(cleaned) } catch {
-      console.error('Generate JSON parse failed:', rawText.slice(0, 600))
+      console.error('Generate JSON parse failed. Raw response:', rawText.slice(0, 800))
       throw new Error('AI returned an invalid response. Please try again.')
     }
 
