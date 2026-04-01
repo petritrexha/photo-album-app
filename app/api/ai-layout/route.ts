@@ -405,7 +405,9 @@ STRICT RULES:
 6. Clean grid templates ("quad-grid", "three-col", "side-by-side") suit minimal or formal styles.
 7. Background + caption fill must have strong contrast. Dark background → light text. Light background → dark text.
 8. "caption" is optional — use null when the photo speaks for itself. Use it on first/last pages and hero-caption template.
-9. Do not put captions on "full-bleed" unless the mood strongly calls for it.`
+9. Do not put captions on "full-bleed" unless the mood strongly calls for it.
+
+CRITICAL: Your entire response must be a single raw JSON object. No markdown, no code fences, no prose, no commentary before or after the JSON.`
 }
 
 const REFINE_SYSTEM_PROMPT = `You are an expert photo album stylist.
@@ -446,7 +448,9 @@ STRICT RULES:
 3. Update the background colour for EVERY page.
 4. Update ALL existing text elements (improve the caption text to match the new mood).
 5. "newTextElements" should be an empty array — do not add new elements.
-6. Ensure strong contrast: background vs text fill.`
+6. Ensure strong contrast: background vs text fill.
+
+CRITICAL: Your entire response must be a single raw JSON object. No markdown, no code fences, no prose, no commentary before or after the JSON.`
 
 // ── JSON extractor ───────────────────────────────────────────────────────────
 // Claude sometimes wraps JSON in prose or code fences despite instructions.
@@ -577,7 +581,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           model: CLAUDE_MODEL,
           max_tokens: 8192,
-          temperature: 1,
+          temperature: 0,
           system: REFINE_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: userMsg }],
         }),
