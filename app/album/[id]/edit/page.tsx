@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
+import { uploadToCloudinary } from '@/lib/cloudinary'
 import { useAlbumStore } from '@/lib/store'
 import { useDropzone } from 'react-dropzone'
 import { useTheme } from '@/lib/theme'
@@ -11,21 +12,6 @@ import type { Photo, Frame, PageElement } from '@/lib/supabase'
 
 const AlbumCanvas = dynamic(() => import('@/components/AlbumCanvas'), { ssr: false })
 
-// ── Upload helper ─────────────────────────────────────────────────────────────
-async function uploadWithProgress(file: File, folder: string, onProgress: (p: number) => void) {
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
-  formData.append('folder', folder)
-  return new Promise<any>((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`)
-    xhr.upload.addEventListener('progress', e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 90)) })
-    xhr.addEventListener('load', () => { if (xhr.status < 300) { onProgress(100); resolve(JSON.parse(xhr.responseText)) } else reject(new Error('Upload failed')) })
-    xhr.addEventListener('error', () => reject(new Error('Network error')))
-    xhr.send(formData)
-  })
-}
 
 // ── Minimal icon set ─────────────────────────────────────────────────────────
 const I = {
@@ -562,6 +548,7 @@ export default function AlbumEditorPage() {
   const [showAIStyle, setShowAIStyle] = useState(false)
   const [showAIRefine, setShowAIRefine] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [exportPdfAction, setExportPdfAction] = useState<(() => Promise<void>) | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [rightTab, setRightTab] = useState<RightTab>('bg')
   const [editingTitle, setEditingTitle] = useState(false)
@@ -582,6 +569,10 @@ export default function AlbumEditorPage() {
 
   const categoryId = album ? detectCategoryFromTitle(album.title) : 'photo-book'
   const catConfig = getCategoryConfig(categoryId)
+
+  const handleExportReady = useCallback((action: (() => Promise<void>) | null) => {
+    setExportPdfAction(() => action)
+  }, [])
 
   // ── Mobile detection ────────────────────────────────────────────
   useEffect(() => {
@@ -653,7 +644,8 @@ export default function AlbumEditorPage() {
     for (const file of files) {
       setUploadProgress(0)
       try {
-        const result = await uploadWithProgress(file, 'photo-album-app', p => setUploadProgress(p))
+        const result = await uploadToCloudinary(file, 'photo-album-app', p => setUploadProgress(Math.min(p, 95)))
+        setUploadProgress(100)
         const { data: photo } = await supabase.from('photos').insert({
           album_id: albumId, user_id: user.id,
           url: result.secure_url, cloudinary_id: result.public_id,
@@ -675,20 +667,37 @@ export default function AlbumEditorPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const fd = new FormData()
-      fd.append('file', file); fd.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!); fd.append('folder', 'photo-album-app/frames')
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: fd })
-      const cd = await res.json()
-      if (!cd.secure_url) return
-      const { data: saved } = await supabase.from('frames').insert({ user_id: user.id, name: file.name.replace(/\.[^/.]+$/, ''), url: cd.secure_url, cloudinary_id: cd.public_id, width: cd.width, height: cd.height, album_id: null }).select().single()
+      const cd = await uploadToCloudinary(file, 'photo-album-app/frames')
+      const { data: saved } = await supabase.from('frames').insert({
+        user_id: user.id,
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        url: cd.secure_url,
+        cloudinary_id: cd.public_id,
+        width: cd.width,
+        height: cd.height,
+        album_id: null,
+      }).select().single()
       if (saved) addFrame(saved)
     } catch (err) { console.error('Frame upload error:', err) }
     setFrameUploading(false)
   }
 
   async function deleteFrame(id: string) {
-    await supabase.from('frames').delete().eq('id', id)
-    removeFrame(id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      const res = await fetch(`/api/frames/${id}/delete`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(payload.error || 'Failed to delete frame.')
+      removeFrame(id)
+    } catch (err) {
+      console.error('Frame delete error:', err)
+    }
   }
 
   // ── AI Generate ───────────────────────────────────────────────────
@@ -706,6 +715,7 @@ export default function AlbumEditorPage() {
           pageCount: Math.max(Math.ceil(photos.length / 3), 1),
           prompt: `${catConfig.aiPromptHint} ${prompt}`,
           mode: 'generate',
+          currentPages: album?.pages || [],
           canvasW: catConfig.canvasW,
           canvasH: catConfig.canvasH,
         }),
@@ -958,8 +968,14 @@ export default function AlbumEditorPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
           <button className="btn btn-icon" onClick={undo} title="Undo ⌘Z" style={{ width: '32px', height: '32px', color: 'var(--text-secondary)' }}><I.Undo /></button>
           <div style={{ width: '1px', height: '18px', background: 'var(--border)', margin: '0 2px' }} />
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowExport(true)} style={{ gap: '5px', height: '32px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-            <I.Download /> Export
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => exportPdfAction?.()}
+            disabled={!exportPdfAction || !album?.pages?.length}
+            style={{ gap: '5px', height: '32px', fontSize: '12px', color: 'var(--text-secondary)' }}
+            title="Export album as PDF"
+          >
+            <I.Download /> Export PDF
           </button>
           <button
             className={`btn btn-sm ${isDirty ? 'btn-primary' : 'btn-ghost'}`}
@@ -1088,8 +1104,10 @@ export default function AlbumEditorPage() {
           <AlbumCanvas
             canvasW={catConfig.canvasW}
             canvasH={catConfig.canvasH}
+            exportDPI={catConfig.printDPI}
             activeTool={activeTool}
             onElementAdded={() => setActiveTool('select')}
+            onExportReady={handleExportReady}
           />
         </main>
 
@@ -1234,3 +1252,4 @@ export default function AlbumEditorPage() {
     </div>
   )
 }
+

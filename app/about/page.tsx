@@ -320,7 +320,7 @@ export default function AboutPage() {
             num="01"
             title="You upload, we analyse"
             body="Photos are uploaded directly to Cloudinary, our CDN partner. Each image is stored with its exact dimensions and a unique ID. Nothing is altered at upload time — your original files are preserved exactly."
-            detail={`Upload flow: File → XHR request with progress events → Cloudinary unsigned preset → returns { secure_url, width, height, public_id } → stored in Supabase photos table with album_id foreign key. Cross-origin headers set via Cloudinary upload params so react-konva can render them on the HTML canvas without CORS errors.`}
+            detail={`Upload flow: client requests a short-lived signed upload from our API route, then uploads directly to Cloudinary with that signature. Response values { secure_url, width, height, public_id } are stored in Supabase with album ownership enforced by RLS.`}
           />
         </FadeSection>
 
@@ -365,7 +365,7 @@ export default function AboutPage() {
             num="06"
             title="Your data is yours, secured by row-level policies"
             body="Every database table has Row Level Security enabled. Albums, photos, and frames are only visible to the user who created them — enforced at the database level, not just the application. Auth tokens are verified server-side before every AI call."
-            detail={`Supabase RLS policies: auth.uid() = user_id on all tables. API routes validate the session via supabase.auth.getUser() with the Bearer token from the Authorization header — not just checking if a session exists, but verifying it against Supabase auth servers. Rate limiting: 30 AI requests per 5 minutes per user (in-memory map, resets on Vercel cold start — Upstash Redis planned for production).`}
+            detail={`Supabase RLS policies: auth.uid() = user_id on private tables. API routes validate the session via supabase.auth.getUser() with a Bearer token from the Authorization header. Rate limiting is persisted in ai_usage: max 30 AI requests per 5 minutes per user across instances.`}
           />
         </FadeSection>
       </section>
@@ -552,3 +552,4 @@ export default function AboutPage() {
     </main>
   )
 }
+

@@ -177,9 +177,24 @@ export default function DashboardPage() {
   }
 
   async function deleteAlbum(album: Album) {
-    await supabase.from('albums').delete().eq('id', album.id)
-    setAlbums(prev => prev.filter(a => a.id !== album.id))
-    setDeleteTarget(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/'); return }
+
+      const res = await fetch(`/api/albums/${album.id}/delete`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(payload.error || 'Failed to delete album.')
+
+      setAlbums(prev => prev.filter(a => a.id !== album.id))
+      setDeleteTarget(null)
+      if (payload.cleanupWarning) console.warn(payload.cleanupWarning)
+    } catch (err) {
+      console.error('Album delete failed:', err)
+    }
   }
 
   async function signOut() {

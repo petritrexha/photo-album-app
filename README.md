@@ -1,70 +1,45 @@
-# Folio — AI Photo Product Builder
+# Folio - AI Photo Product Builder
 
 AI-powered platform for turning photos into designed albums and print products.
 
-Upload photos, describe a style, and Folio generates a complete layout. You can edit everything in a canvas editor or export directly.
-
----
-
 ## What It Does
 
-- Generate full photo albums using AI
-- Edit layouts with a drag-and-drop canvas
-- Export print-ready PDFs
-- (Soon) order physical products
-
-**Core idea:** AI doesn’t suggest templates — it designs entire layouts.
-
----
-
-## Key Features
-
-- AI album generation (full layouts, restyling, captions)
-- Canvas editor (drag, resize, text editing, layers)
-- Photo upload & management (Cloudinary)
-- Built-in templates (wedding, travel, minimal, etc.)
-- PDF export (A4, square, high-res)
-- Multiple product types (albums, cards, wall art, etc.)
-
----
+- Generates full photo albums using AI
+- Supports drag-and-drop canvas editing
+- Exports print-ready PDFs
+- Supports multiple product types (albums, cards, wall art, and more)
 
 ## Tech Stack
 
-- **Frontend:** Next.js 14, TypeScript, Tailwind
-- **Canvas:** Konva.js
-- **State:** Zustand
-- **Backend/DB:** Supabase (PostgreSQL + Auth)
-- **Storage/CDN:** Cloudinary
-- **AI:** Anthropic Claude
-- **Export:** jsPDF + html2canvas
-- **Deployment:** Vercel
-
----
+- Frontend: Next.js 14, TypeScript, Tailwind
+- Canvas: Konva.js
+- State: Zustand
+- Backend/DB: Supabase (PostgreSQL + Auth + RLS)
+- Storage/CDN: Cloudinary
+- AI: Anthropic Claude
+- Export: jsPDF + html2canvas
+- Deployment: Vercel
 
 ## Project Structure
-- app/ # Pages & API routes
-- components/ # UI components
-- lib/ # Core logic (store, config, services)
-- supabase/ # Database schema
 
----
+- `app/` - Pages and API routes
+- `components/` - UI components
+- `lib/` - Core logic (store, config, services)
+- `supabase/` - Database schema and migrations
 
 ## Getting Started
 
 ```bash
 git clone https://github.com/petritrexha/photo-album-app.git
-cd folio
-npm install --legacy-peer-deps
-cp .env.example .env.local
+cd photo-album-app
+npm install
 npm run dev
+```
 
-## Core Architecture
+## Architecture Notes
 
-Editor state lives in Zustand (fast, in-memory)
-Data persists to Supabase (manual saves)
-AI runs via API routes with structured JSON output
-Canvas is resolution-independent (scaled rendering)
+- Editor state is managed in Zustand.
+- Data is persisted to Supabase.
+- AI generation runs in API routes and returns structured JSON.
+- Canvas rendering is resolution-independent and scales responsively.
 
-##Status
-
-Active solo project. Production-focused but still evolving.

@@ -7,7 +7,7 @@ import type { PageElement } from '@/lib/supabase'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
-// ──────────────────────────────────────────────────────────────────────`───────
+// ─────────────────────────────────────────────────────────────────────────────
 
 type LayoutTemplate =
   | 'scrapbook'
@@ -30,33 +30,22 @@ type SpreadConfig = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TASK 1 — COORDINATE-STRICT GRID SYSTEM
-//
-// Each SlotDef is a fixed container. When a photo is placed into a slot:
-//   1. Slot absolute px coords = (xP,yP,wP,hP) × (canvasW, canvasH) — exact.
-//   2. Photo is drawn AT those coordinates — no drift allowed.
-//   3. Crop-to-fit (object-fit: cover) via Konva Group clip + offset math:
-//      scale so the SMALLER dimension fills the slot, then center.
-//      Original aspect ratio is NEVER broken.
-//
-// buildGridPromptSection() injects these coords verbatim into every AI call.
+// COORDINATE-STRICT GRID SYSTEM
 // ─────────────────────────────────────────────────────────────────────────────
 
-const M = 0.04 // standard margin fraction
+const M = 0.04
 
 type SlotDef = {
-  id: string       // "A" "B" "C" … — used in AI prompt
-  xP: number       // left  as fraction of canvasW
-  yP: number       // top   as fraction of canvasH
-  wP: number       // width as fraction of canvasW
-  hP: number       // height as fraction of canvasH
-  rot?: number     // fixed rotation in degrees (scrapbook only)
-  arLabel?: string // derived AR string, e.g. "4:3"
+  id: string
+  xP: number
+  yP: number
+  wP: number
+  hP: number
+  rot?: number
+  arLabel?: string
 }
 
-function computeArLabel(
-  wP: number, hP: number, cW: number, cH: number,
-): string {
+function computeArLabel(wP: number, hP: number, cW: number, cH: number): string {
   const w = wP * cW; const h = hP * cH; const r = w / h
   if (Math.abs(r - 1) < 0.08) return '1:1'
   if (Math.abs(r - 4 / 3) < 0.10) return '4:3'
@@ -95,7 +84,6 @@ const RAW_SLOTS: Record<LayoutTemplate, Omit<SlotDef, 'id' | 'arLabel'>[]> = {
 
 const SLOT_IDS = ['A', 'B', 'C', 'D', 'E', 'F']
 
-/** Build fully-typed SlotDef[] for a template (attaches IDs + AR labels). */
 function buildSlots(template: LayoutTemplate, cW: number, cH: number): SlotDef[] {
   return RAW_SLOTS[template].map((raw, i) => ({
     ...raw,
@@ -104,7 +92,6 @@ function buildSlots(template: LayoutTemplate, cW: number, cH: number): SlotDef[]
   }))
 }
 
-/** Returns the prompt section to inject into every AI layout call. */
 export function buildGridPromptSection(
   template: LayoutTemplate, canvasW: number, canvasH: number,
 ): string {
@@ -127,19 +114,27 @@ export function buildGridPromptSection(
 // ─── CROP-TO-FIT MATH ────────────────────────────────────────────────────────
 type CropFitProps = { imgX: number; imgY: number; imgW: number; imgH: number }
 
-function computeCropFit(
+function computeImageFit(
   naturalW: number, naturalH: number,
   slotW: number, slotH: number,
+  fit: 'cover' | 'contain' = 'cover',
 ): CropFitProps {
   const slotAR = slotW / slotH
   const imgAR = naturalW / naturalH
   let renderedW: number, renderedH: number
-  if (imgAR > slotAR) {
-    renderedH = slotH; renderedW = slotH * imgAR
+  const shouldWidthDrive = fit === 'cover' ? imgAR <= slotAR : imgAR > slotAR
+  if (shouldWidthDrive) {
+    renderedW = slotW
+    renderedH = slotW / imgAR
   } else {
-    renderedW = slotW; renderedH = slotW / imgAR
+    renderedH = slotH
+    renderedW = slotH * imgAR
   }
   return { imgX: (slotW - renderedW) / 2, imgY: (slotH - renderedH) / 2, imgW: renderedW, imgH: renderedH }
+}
+
+function toHighQualityUrl(url: string): string {
+  return url.includes('/upload/') ? url.replace('/upload/', '/upload/q_100,f_png/') : url
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,8 +184,7 @@ const THEME_ENVS: Record<LayoutTheme, { bg: string; grain: number; vignette: str
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TASK 2 — SVG LAYOUT PREVIEWS (shown inline in template dropdown on hover)
-// Each is a 56×40 miniature that mirrors the actual slot layout.
+// SVG LAYOUT PREVIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TEMPLATE_PREVIEWS: Record<LayoutTemplate, React.ReactNode> = {
@@ -256,14 +250,14 @@ const TEMPLATE_PREVIEWS: Record<LayoutTemplate, React.ReactNode> = {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CROP-FITTED PHOTO ELEMENT
-// Konva Group acts as clip rect; KonvaImage is offset so it covers the slot.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function PhotoElement({ element, isSelected, onSelect, onUpdate }: {
   element: PageElement; isSelected: boolean
   onSelect: () => void; onUpdate: (u: Partial<PageElement>) => void
 }) {
-  const [image, status] = useImage(element.url || '', 'anonymous')
+  const imageUrl = element.url || ''
+  const [image, status] = useImage(imageUrl, 'anonymous')
   const groupRef = useRef<any>(null)
   const trRef = useRef<any>(null)
 
@@ -284,7 +278,8 @@ function PhotoElement({ element, isSelected, onSelect, onUpdate }: {
 
   const naturalW = image?.width ?? element.width
   const naturalH = image?.height ?? element.height
-  const { imgX, imgY, imgW, imgH } = computeCropFit(naturalW, naturalH, element.width, element.height)
+  const fitMode = element.fit ?? (element.type === 'frame' ? 'contain' : 'cover')
+  const { imgX, imgY, imgW, imgH } = computeImageFit(naturalW, naturalH, element.width, element.height, fitMode)
 
   return (
     <>
@@ -558,7 +553,6 @@ function PageCanvas({
     <div style={{ position: 'relative', width: Math.round(canvasW * scale), height: Math.round(canvasH * scale), flexShrink: 0 }}
       onDrop={handleDrop} onDragOver={e => e.preventDefault()}>
 
-      {/* Active glow ring */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5, boxShadow: isActive ? 'inset 0 0 0 1.5px rgba(200,132,46,0.5), 0 0 24px rgba(200,132,46,0.12)' : 'none', transition: 'box-shadow 250ms' }} />
 
       <Stage ref={stageRef} width={canvasW} height={canvasH} scaleX={scale} scaleY={scale}
@@ -597,7 +591,6 @@ function PageCanvas({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TEMPLATE GUIDE OVERLAY
-// Slot outlines with hover tooltip showing exact px coordinates + AR label.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TemplateOverlay({ template, canvasW, canvasH, scale }: {
@@ -630,12 +623,9 @@ function TemplateOverlay({ template, canvasW, canvasH, scale }: {
               padding: '4px 5px', transition: 'border-color 120ms, background 120ms',
               pointerEvents: 'all', cursor: 'default',
             }}>
-            {/* Slot badge */}
             <span style={{ fontSize: 8, color: isH ? 'rgba(200,132,46,0.95)' : 'rgba(200,132,46,0.4)', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', lineHeight: 1 }}>
               {s.id}
             </span>
-
-            {/* Coordinate tooltip */}
             {isH && (
               <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: 'rgba(8,8,9,0.94)', border: '1px solid rgba(200,132,46,0.3)', borderRadius: 6, padding: '5px 9px', zIndex: 20, whiteSpace: 'nowrap', boxShadow: '0 4px 14px rgba(0,0,0,0.55)', pointerEvents: 'none' }}>
                 <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent)', letterSpacing: '0.04em', lineHeight: 1.65 }}>
@@ -644,7 +634,6 @@ function TemplateOverlay({ template, canvasW, canvasH, scale }: {
                   {Math.round(s.wP * canvasW)} × {Math.round(s.hP * canvasH)} px
                   {s.rot ? <><br />↻ {s.rot}°</> : null}
                 </div>
-                {/* Arrow */}
                 <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid rgba(200,132,46,0.3)' }} />
               </div>
             )}
@@ -656,15 +645,7 @@ function TemplateOverlay({ template, canvasW, canvasH, scale }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TASK 2 — PENDING-STATE LAYOUT CONFIGURATOR
-//
-// State flow:
-//   pending = local draft (changed on every interaction, no canvas update)
-//   activeConfig = committed state (only updated on "Apply Changes" click)
-//
-// The "Apply Changes" button activates only when pending ≠ activeConfig.
-// A "Discard" link resets pending back to activeConfig.
-// Template dropdowns show inline SVG previews on hover.
+// PENDING-STATE LAYOUT CONFIGURATOR
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SEL: React.CSSProperties = {
@@ -684,7 +665,6 @@ const TPL_OPTS: TplOpt[] = [
   { value: 'custom', label: 'Custom (free)', count: '—' },
 ]
 
-/** Custom dropdown for a single side's template with inline SVG hover previews. */
 function TemplateSelect({
   live, pending, onChange,
 }: { live: LayoutTemplate; pending: LayoutTemplate; onChange: (t: LayoutTemplate) => void }) {
@@ -731,16 +711,13 @@ function TemplateSelect({
                 onClick={() => { onChange(opt.value); setOpen(false) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', background: isActive ? 'rgba(200,132,46,0.12)' : isHov ? 'var(--bg-tertiary)' : 'transparent', transition: 'background 100ms' }}
               >
-                {/* SVG preview — dimmed when not hovered/active */}
                 <div style={{ flexShrink: 0, width: 56, height: 40, opacity: isHov || isActive ? 1 : 0.32, transition: 'opacity 120ms', borderRadius: 3, overflow: 'hidden' }}>
                   {TEMPLATE_PREVIEWS[opt.value]}
                 </div>
-
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-body)', color: isActive ? 'var(--accent)' : 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.label}</div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>{opt.count} photo{opt.count === '1' ? '' : 's'}</div>
                 </div>
-
                 {isActive && (
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
                     <polyline points="20 6 9 17 4 12" />
@@ -755,7 +732,6 @@ function TemplateSelect({
   )
 }
 
-/** Main configurator panel — pending state, Apply button, Discard link. */
 function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onCommit: (c: SpreadConfig) => void }) {
   const [pending, setPending] = useState<SpreadConfig>(config)
   const [open, setOpen] = useState(false)
@@ -769,7 +745,6 @@ function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onComm
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Trigger */}
       <button onClick={() => setOpen(o => !o)} style={{
         display: 'flex', alignItems: 'center', gap: 6,
         background: open ? 'var(--accent-muted)' : hasPending ? 'rgba(200,132,46,0.08)' : 'var(--bg-elevated)',
@@ -793,8 +768,6 @@ function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onComm
 
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 300, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 16, zIndex: 300, display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-          {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>Spread Layout</span>
             {hasPending && (
@@ -802,14 +775,12 @@ function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onComm
             )}
           </div>
 
-          {/* Pending notice */}
           {hasPending && (
             <div style={{ background: 'rgba(200,132,46,0.08)', border: '1px solid rgba(200,132,46,0.2)', borderRadius: 8, padding: '7px 10px', fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
               ⚡ Unsaved changes — click <strong>Apply</strong> to update the canvas.
             </div>
           )}
 
-          {/* Theme pills */}
           <div>
             <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', display: 'block', marginBottom: 5 }}>Desk Theme</label>
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -827,7 +798,6 @@ function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onComm
             </div>
           </div>
 
-          {/* Style pills */}
           <div>
             <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', display: 'block', marginBottom: 5 }}>Photo Style</label>
             <div style={{ display: 'flex', gap: 5 }}>
@@ -843,7 +813,6 @@ function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onComm
             </div>
           </div>
 
-          {/* Per-side template selects */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {(['left', 'right'] as const).map(side => (
               <div key={side}>
@@ -859,7 +828,6 @@ function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onComm
             ))}
           </div>
 
-          {/* Apply / Cancel */}
           <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
             <button onClick={() => setOpen(false)} style={{ flex: 1, padding: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-body)', cursor: 'pointer' }}>
               Cancel
@@ -892,7 +860,7 @@ function LayoutConfigurator({ config, onCommit }: { config: SpreadConfig; onComm
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BOOK CHROME (Spine + PageCurl)
+// BOOK CHROME
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BookSpine({ height }: { height: number }) {
@@ -917,7 +885,7 @@ function PageCurl({ side }: { side: 'left' | 'right' }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ZOOM + SPREAD NAVIGATOR (unchanged from v1)
+// ZOOM + SPREAD NAVIGATOR
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ZoomControls({ zoom, onChange }: { zoom: number; onChange: (z: number) => void }) {
@@ -949,17 +917,210 @@ function SpreadNavigator() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PDF EXPORT — renders every page to an off-screen canvas, then stitches a PDF
+// Uses the native Canvas 2D API so it works without Konva stage refs and works
+// for ALL pages, not just the currently visible spread.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function loadImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    // Append cache-buster only for same-origin / Supabase URLs to sidestep
+    // browser cache entries that lack CORS headers
+    img.src = url.includes('?') ? url : `${url}?cb=${Date.now()}`
+  })
+}
+
+async function renderPageToCanvas(
+  page: { background: string; elements: PageElement[] },
+  canvasW: number,
+  canvasH: number,
+  scaleMultiplier = 1,
+): Promise<HTMLCanvasElement> {
+  const offCanvas = document.createElement('canvas')
+  const scaledW = Math.max(1, Math.round(canvasW * scaleMultiplier))
+  const scaledH = Math.max(1, Math.round(canvasH * scaleMultiplier))
+  offCanvas.width = scaledW
+  offCanvas.height = scaledH
+  const ctx = offCanvas.getContext('2d')!
+  ctx.setTransform(scaleMultiplier, 0, 0, scaleMultiplier, 0, 0)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+
+  // ── Background ──────────────────────────────────────────────────────────
+  const bg = page.background || '#0f0f0f'
+  if (bg.startsWith('linear-gradient')) {
+    const parsed = parseLinearGradient(bg, canvasW, canvasH)
+    if (parsed) {
+      const grad = ctx.createLinearGradient(
+        parsed.startPoint.x, parsed.startPoint.y,
+        parsed.endPoint.x, parsed.endPoint.y
+      )
+      for (let i = 0; i < parsed.colorStops.length; i += 2) {
+        try {
+          grad.addColorStop(parsed.colorStops[i] as number, parsed.colorStops[i + 1] as string)
+        } catch { /* skip bad stop */ }
+      }
+      ctx.fillStyle = grad
+    } else {
+      ctx.fillStyle = '#1a1a1a'
+    }
+  } else {
+    ctx.fillStyle = bg
+  }
+  ctx.fillRect(0, 0, canvasW, canvasH)
+
+  // ── Elements — images first, then text on top ───────────────────────────
+  const sorted = [...page.elements].sort((a, b) => {
+    if (a.type === 'text' && b.type !== 'text') return 1
+    if (a.type !== 'text' && b.type === 'text') return -1
+    return 0
+  })
+
+  for (const el of sorted) {
+    if ((el.type === 'image' || el.type === 'frame') && el.url) {
+      const sourceUrl = el.type === 'image' ? toHighQualityUrl(el.url) : el.url
+      const img = await loadImage(sourceUrl)
+      if (!img) continue
+
+      ctx.save()
+
+      // Apply rotation around the element's centre
+      const cx = el.x + el.width / 2
+      const cy = el.y + el.height / 2
+      if (el.rotation) {
+        ctx.translate(cx, cy)
+        ctx.rotate((el.rotation * Math.PI) / 180)
+        ctx.translate(-cx, -cy)
+      }
+
+      // Clip to the slot rectangle
+      ctx.beginPath()
+      ctx.rect(el.x, el.y, el.width, el.height)
+      ctx.clip()
+
+      // Crop-fit the photo (object-fit: cover) — same math as Konva
+      const fitMode = el.fit ?? (el.type === 'frame' ? 'contain' : 'cover')
+      const { imgX, imgY, imgW, imgH } = computeImageFit(
+        img.naturalWidth, img.naturalHeight,
+        el.width, el.height,
+        fitMode,
+      )
+      ctx.drawImage(img, el.x + imgX, el.y + imgY, imgW, imgH)
+
+      ctx.restore()
+    } else if (el.type === 'text' && el.text) {
+      ctx.save()
+
+      // Rotation
+      const textCx = el.x + (el.width || 200) / 2
+      const textCy = el.y + (el.fontSize || 18) / 2
+      if (el.rotation) {
+        ctx.translate(textCx, textCy)
+        ctx.rotate((el.rotation * Math.PI) / 180)
+        ctx.translate(-textCx, -textCy)
+      }
+
+      // Font
+      const fStyle = el.fontStyle || ''
+      const bold = fStyle.includes('bold') ? 'bold' : ''
+      const italic = fStyle.includes('italic') ? 'italic' : ''
+      const fontSize = el.fontSize || 18
+      ctx.font = [italic, bold, `${fontSize}px`, el.fontFamily || 'Georgia, serif']
+        .filter(Boolean).join(' ')
+      ctx.fillStyle = el.fill || '#f4f0ea'
+      ctx.textBaseline = 'top'
+
+      const align = (el.align || 'left') as CanvasTextAlign
+      ctx.textAlign = align
+      const maxWidth = el.width || 200
+      const xPos = align === 'center'
+        ? el.x + maxWidth / 2
+        : align === 'right'
+          ? el.x + maxWidth
+          : el.x
+
+      // Word-wrap
+      const lineH = fontSize * (el.lineHeight || 1.4)
+      let lineY = el.y
+      const rawLines = el.text.split('\n')
+
+      for (const rawLine of rawLines) {
+        const words = rawLine.split(' ')
+        let line = ''
+        for (const word of words) {
+          const test = line ? `${line} ${word}` : word
+          if (ctx.measureText(test).width > maxWidth && line) {
+            ctx.fillText(line, xPos, lineY)
+            line = word
+            lineY += lineH
+          } else {
+            line = test
+          }
+        }
+        if (line) ctx.fillText(line, xPos, lineY)
+        lineY += lineH
+      }
+
+      ctx.restore()
+    }
+  }
+
+  return offCanvas
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXPORT PROGRESS OVERLAY
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ExportOverlay({ current, total }: { current: number; total: number }) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(6px)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20,
+    }}>
+      {/* Animated ring */}
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(200,132,46,0.15)" strokeWidth="4" />
+        <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(200,132,46,0.9)" strokeWidth="4"
+          strokeLinecap="round"
+          strokeDasharray={`${2 * Math.PI * 26}`}
+          strokeDashoffset={`${2 * Math.PI * 26 * (1 - pct / 100)}`}
+          style={{ transition: 'stroke-dashoffset 300ms ease', transformOrigin: '32px 32px', transform: 'rotate(-90deg)' }}
+        />
+        <text x="32" y="37" textAnchor="middle" fill="rgba(200,132,46,0.9)" fontSize="12" fontFamily="monospace">{pct}%</text>
+      </svg>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 14, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
+          Exporting album to PDF…
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
+          Page {Math.min(current + 1, total)} of {total}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AlbumCanvasProps = {
   canvasW?: number
   canvasH?: number
+  exportDPI?: number
   activeTool?: 'select' | 'text'
   onElementAdded?: () => void
+  onExportReady?: ((action: (() => Promise<void>) | null) => void) | undefined
 }
 
-export default function AlbumCanvas({ canvasW = 800, canvasH = 600, activeTool = 'select', onElementAdded }: AlbumCanvasProps) {
+export default function AlbumCanvas({ canvasW = 800, canvasH = 600, exportDPI = 300, activeTool = 'select', onElementAdded, onExportReady }: AlbumCanvasProps) {
   const { album, currentPageIndex, setCurrentPageIndex, undo } = useAlbumStore()
 
   const [zoom, setZoom] = useState(0.75)
@@ -969,6 +1130,69 @@ export default function AlbumCanvas({ canvasW = 800, canvasH = 600, activeTool =
     photosPerPage: 2, layoutStyle: 'clean', theme: 'wedding',
     leftTemplate: 'custom', rightTemplate: 'custom',
   })
+
+  // ── PDF export state ────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
+  const exportScale = Math.max(2, Math.min(4, exportDPI / 96))
+
+  const exportToPDF = useCallback(async () => {
+    if (!album || exporting) return
+    setExporting(true)
+    const total = album.pages.length
+    setExportProgress({ current: 0, total })
+
+    try {
+      // Dynamic import — only loaded when actually exporting
+      const { default: jsPDF } = await import('jspdf')
+
+      // Ensure Google Fonts / custom fonts have loaded
+      await document.fonts.ready
+
+      const isLandscape = canvasW >= canvasH
+      const pdf = new jsPDF({
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      })
+      const pdfW = pdf.internal.pageSize.getWidth()
+      const pdfH = pdf.internal.pageSize.getHeight()
+
+      for (let i = 0; i < album.pages.length; i++) {
+        setExportProgress({ current: i, total })
+
+        if (i > 0) pdf.addPage('a4', isLandscape ? 'landscape' : 'portrait')
+
+        const offCanvas = await renderPageToCanvas(album.pages[i], canvasW, canvasH, exportScale)
+        const dataUrl = offCanvas.toDataURL('image/png')
+        pdf.addImage(dataUrl, 'PNG', 0, 0, pdfW, pdfH, undefined, 'FAST')
+      }
+
+      setExportProgress({ current: total, total })
+
+      // Small delay so the user sees 100% before the dialog appears
+      await new Promise(r => setTimeout(r, 300))
+
+      const safeName = (album.title || 'album')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+      pdf.save(`${safeName}.pdf`)
+
+    } catch (err: any) {
+      console.error('PDF export failed:', err)
+      // Show a user-facing error without crashing
+      alert(`Export failed: ${err?.message || 'Unknown error'}.\n\nMake sure all photos have finished loading and try again.`)
+    } finally {
+      setExporting(false)
+      setExportProgress({ current: 0, total: 0 })
+    }
+  }, [album, canvasW, canvasH, exportScale, exporting])
+
+  useEffect(() => {
+    onExportReady?.(exportToPDF)
+    return () => onExportReady?.(null)
+  }, [exportToPDF, onExportReady])
 
   const leftIdx = Math.floor(currentPageIndex / 2) * 2
   const rightIdx = leftIdx + 1
@@ -984,15 +1208,20 @@ export default function AlbumCanvas({ canvasW = 800, canvasH = 600, activeTool =
       if (e.key === 'ArrowRight' && album && rightIdx + 1 < album.pages.length) setCurrentPageIndex(leftIdx + 2)
       if (e.key === 'ArrowLeft' && leftIdx >= 2) setCurrentPageIndex(leftIdx - 2)
       if (e.key === 'g') setShowGuides(v => !v)
+      // Keyboard shortcut for export
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'e') { e.preventDefault(); exportToPDF() }
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [album, leftIdx, rightIdx, setCurrentPageIndex, undo])
+  }, [album, leftIdx, rightIdx, setCurrentPageIndex, undo, exportToPDF])
 
   if (!album) return null
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', background: env.bg }}>
+
+      {/* Export progress overlay */}
+      {exporting && <ExportOverlay current={exportProgress.current} total={exportProgress.total} />}
 
       {/* Grain + Vignette */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`, opacity: env.grain, mixBlendMode: 'overlay' }} />
@@ -1026,7 +1255,7 @@ export default function AlbumCanvas({ canvasW = 800, canvasH = 600, activeTool =
 
         <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.08)' }} />
 
-        {/* Layout configurator (pending → commit on Apply) */}
+        {/* Layout configurator */}
         <LayoutConfigurator config={activeConfig} onCommit={setActiveConfig} />
 
         {/* Guide toggle */}
@@ -1040,6 +1269,44 @@ export default function AlbumCanvas({ canvasW = 800, canvasH = 600, activeTool =
         <SpreadNavigator />
         <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.08)' }} />
         <ZoomControls zoom={zoom} onChange={setZoom} />
+
+        <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.08)' }} />
+
+        {/* ── PDF Export Button ── */}
+        {false && <button
+          onClick={exportToPDF}
+          disabled={exporting || !album?.pages?.length}
+          title="Export album as PDF (⌘⇧E)"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: exporting ? 'rgba(200,132,46,0.05)' : 'rgba(200,132,46,0.1)',
+            border: '1px solid rgba(200,132,46,0.35)',
+            color: exporting ? 'rgba(200,132,46,0.4)' : 'var(--accent)',
+            borderRadius: 8, padding: '5px 12px', fontSize: 11,
+            fontFamily: 'var(--font-body)', fontWeight: 700,
+            cursor: exporting ? 'not-allowed' : 'pointer',
+            transition: 'all 150ms', letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
+          }}
+          onMouseEnter={e => { if (!exporting) (e.currentTarget.style.background = 'rgba(200,132,46,0.18)') }}
+          onMouseLeave={e => (e.currentTarget.style.background = exporting ? 'rgba(200,132,46,0.05)' : 'rgba(200,132,46,0.1)')}
+        >
+          {exporting ? (
+            /* Spinner */
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+              style={{ animation: 'spin 1s linear infinite' }}>
+              <path d="M21 12a9 9 0 11-18 0" />
+              <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          )}
+          {exporting ? 'Exporting…' : 'Export PDF'}
+        </button>}
       </div>
 
       {/* ── SPREAD AREA ── */}
@@ -1076,7 +1343,7 @@ export default function AlbumCanvas({ canvasW = 800, canvasH = 600, activeTool =
 
       {/* ── STATUS BAR ── */}
       <div style={{ position: 'relative', zIndex: 20, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16, background: 'rgba(8,8,9,0.65)', backdropFilter: 'blur(10px)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>← → pages · G guides · ⌘Z undo</span>
+        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>← → pages · G guides · ⌘Z undo · ⌘⇧E export</span>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 10, color: 'rgba(200,132,46,0.4)', fontFamily: 'var(--font-mono)' }}>{activeConfig.theme} · {activeConfig.layoutStyle}</span>
         <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.08)' }} />

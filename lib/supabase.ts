@@ -22,6 +22,7 @@ export type Page = { id: string; background: string; elements: PageElement[] }
 export type PageElement = {
   id: string; type: 'image' | 'text' | 'frame'
   url?: string; photoId?: string; frameId?: string
+  fit?: 'cover' | 'contain'
   text?: string; fontSize?: number; fill?: string
   fontFamily?: string; fontStyle?: string
   align?: 'left' | 'center' | 'right'; lineHeight?: number

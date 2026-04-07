@@ -93,7 +93,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   },
 
   updateElement: (pageIndex, elementId, updates) => {
-    const { album } = get()
+    const { album, history } = get()
     if (!album) return
     set({
       album: {
@@ -102,6 +102,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
           { ...p, elements: p.elements.map((el) => el.id === elementId ? { ...el, ...updates } : el) }),
       },
       isDirty: true,
+      history: pushHistory(history, album),
     })
   },
 
