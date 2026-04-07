@@ -9,6 +9,10 @@ AI-powered platform for turning photos into designed albums and print products.
 - Exports print-ready PDFs
 - Supports multiple product types (albums, cards, wall art, and more)
 
+## Live Deployment
+
+Live app: `https://photo-album-app-eta.vercel.app`
+
 ## Tech Stack
 
 - Frontend: Next.js 14, TypeScript, Tailwind
@@ -42,4 +46,3 @@ npm run dev
 - Data is persisted to Supabase.
 - AI generation runs in API routes and returns structured JSON.
 - Canvas rendering is resolution-independent and scales responsively.
-
