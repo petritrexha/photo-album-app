@@ -8,6 +8,8 @@ import { useAlbumStore } from '@/lib/store'
 import { useDropzone } from 'react-dropzone'
 import { useTheme } from '@/lib/theme'
 import { getCategoryConfig, detectCategoryFromTitle } from '@/lib/categoryConfig'
+import Toast from '@/components/Toast'
+import { getErrorMessage, throwIfSupabaseError } from '@/lib/errors'
 import type { Photo, Frame, PageElement } from '@/lib/supabase'
 
 const AlbumCanvas = dynamic(() => import('@/components/AlbumCanvas'), { ssr: false })
@@ -562,10 +564,19 @@ export default function AlbumEditorPage() {
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [activeTool, setActiveTool] = useState<'select' | 'text'>('select')
   const [isMobile, setIsMobile] = useState(false)
+  const [toast, setToast] = useState<{ open: boolean; message: string; variant: 'success' | 'error' | 'info' }>({
+    open: false,
+    message: '',
+    variant: 'info',
+  })
 
   const savingRef = useRef(false)
   const frameInputRef = useRef<HTMLInputElement>(null)
   savingRef.current = saving
+
+  const showToast = useCallback((variant: 'success' | 'error' | 'info', message: string) => {
+    setToast({ open: true, variant, message })
+  }, [])
 
   const categoryId = album ? detectCategoryFromTitle(album.title) : 'photo-book'
   const catConfig = getCategoryConfig(categoryId)
@@ -607,11 +618,24 @@ export default function AlbumEditorPage() {
     if (!album || savingRef.current) return
     setSaving(true)
     try {
-      await supabase.from('albums').update({ title: album.title, pages: album.pages, cover_url: album.cover_url }).eq('id', albumId)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        showToast('error', 'Session expired. Please sign in again.')
+        router.push('/')
+        return
+      }
+
+      throwIfSupabaseError(
+        await supabase.from('albums').update({ title: album.title, pages: album.pages, cover_url: album.cover_url }).eq('id', albumId)
+      )
       setIsDirty(false)
-    } catch (err) { console.error('Save failed:', err) }
+      showToast('success', 'Saved.')
+    } catch (err) {
+      console.error('Save failed:', err)
+      showToast('error', getErrorMessage(err, 'Save failed. Please try again.'))
+    }
     finally { setSaving(false) }
-  }, [album, albumId, setIsDirty])
+  }, [album, albumId, setIsDirty, router, showToast])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────
   useEffect(() => {
@@ -640,22 +664,26 @@ export default function AlbumEditorPage() {
   // ── Photo upload ──────────────────────────────────────────────────
   const onPhotoDrop = useCallback(async (files: File[]) => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { showToast('error', 'Session expired. Please sign in again.'); router.push('/'); return }
     for (const file of files) {
       setUploadProgress(0)
       try {
         const result = await uploadToCloudinary(file, 'photo-album-app', p => setUploadProgress(Math.min(p, 95)))
         setUploadProgress(100)
-        const { data: photo } = await supabase.from('photos').insert({
+        const { data: photo, error } = await supabase.from('photos').insert({
           album_id: albumId, user_id: user.id,
           url: result.secure_url, cloudinary_id: result.public_id,
           width: result.width, height: result.height,
         }).select().single()
+        if (error) throw error
         if (photo) addPhoto(photo)
-      } catch (err) { console.error('Upload failed:', err) }
+      } catch (err) {
+        console.error('Upload failed:', err)
+        showToast('error', getErrorMessage(err, 'Upload failed. Please try again.'))
+      }
     }
     setUploadProgress(null)
-  }, [albumId, addPhoto])
+  }, [albumId, addPhoto, router, showToast])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onPhotoDrop, accept: { 'image/*': [] }, multiple: true,
@@ -666,9 +694,9 @@ export default function AlbumEditorPage() {
     setFrameUploading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) { showToast('error', 'Session expired. Please sign in again.'); router.push('/'); return }
       const cd = await uploadToCloudinary(file, 'photo-album-app/frames')
-      const { data: saved } = await supabase.from('frames').insert({
+      const { data: saved, error } = await supabase.from('frames').insert({
         user_id: user.id,
         name: file.name.replace(/\.[^/.]+$/, ''),
         url: cd.secure_url,
@@ -677,15 +705,20 @@ export default function AlbumEditorPage() {
         height: cd.height,
         album_id: null,
       }).select().single()
-      if (saved) addFrame(saved)
-    } catch (err) { console.error('Frame upload error:', err) }
-    setFrameUploading(false)
+      if (error) throw error
+      if (saved) { addFrame(saved); showToast('success', 'Frame uploaded.') }
+    } catch (err) {
+      console.error('Frame upload error:', err)
+      showToast('error', getErrorMessage(err, 'Frame upload failed. Please try again.'))
+    } finally {
+      setFrameUploading(false)
+    }
   }
 
   async function deleteFrame(id: string) {
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      if (!session) { showToast('error', 'Session expired. Please sign in again.'); router.push('/'); return }
 
       const res = await fetch(`/api/frames/${id}/delete`, {
         method: 'DELETE',
@@ -695,18 +728,20 @@ export default function AlbumEditorPage() {
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload.error || 'Failed to delete frame.')
       removeFrame(id)
+      showToast('success', 'Frame deleted.')
     } catch (err) {
       console.error('Frame delete error:', err)
+      showToast('error', getErrorMessage(err, 'Failed to delete frame.'))
     }
   }
 
   // ── AI Generate ───────────────────────────────────────────────────
   async function generateAILayout(prompt: string) {
-    if (photos.length === 0) return
+    if (photos.length === 0) { showToast('info', 'Upload photos first.'); return }
     setAiGenerating(true); setShowAIStyle(false)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      if (!session) { showToast('error', 'Session expired. Please sign in again.'); router.push('/'); return }
       const res = await fetch('/api/ai-layout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -723,7 +758,11 @@ export default function AlbumEditorPage() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`)
       const { pages } = await res.json()
       if (pages && album) { setAlbum({ ...album, pages }); setIsDirty(true) }
-    } catch (err: any) { console.error('AI generate error:', err) }
+      showToast('success', 'Album generated. Review and click Save.')
+    } catch (err: any) {
+      console.error('AI generate error:', err)
+      showToast('error', getErrorMessage(err, 'AI generation failed. Please try again.'))
+    }
     setAiGenerating(false)
   }
 
@@ -733,7 +772,7 @@ export default function AlbumEditorPage() {
     setAiRefining(true); setShowAIRefine(false)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      if (!session) { showToast('error', 'Session expired. Please sign in again.'); router.push('/'); return }
       const res = await fetch('/api/ai-layout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -742,7 +781,11 @@ export default function AlbumEditorPage() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`)
       const { pages } = await res.json()
       if (pages && album) { setAlbum({ ...album, pages }); setIsDirty(true) }
-    } catch (err: any) { console.error('AI refine error:', err) }
+      showToast('success', 'Restyle applied. Review and click Save.')
+    } catch (err: any) {
+      console.error('AI refine error:', err)
+      showToast('error', getErrorMessage(err, 'AI restyle failed. Please try again.'))
+    }
     setAiRefining(false)
   }
 
@@ -790,12 +833,21 @@ export default function AlbumEditorPage() {
   function setCoverPhoto(photo: Photo) {
     if (!album) return
     setAlbum({ ...album, cover_url: photo.url })
-    supabase.from('albums').update({ cover_url: photo.url }).eq('id', albumId)
+    setIsDirty(true)
+    showToast('info', 'Cover selected. Click Save to persist.')
   }
 
   // ── State checks ──────────────────────────────────────────────────
   const hasElements = album?.pages.some(p => p.elements.length > 0) ?? false
   const isAILoading = aiGenerating || aiRefining
+  const toastUI = (
+    <Toast
+      open={toast.open}
+      message={toast.message}
+      variant={toast.variant}
+      onClose={() => setToast(t => ({ ...t, open: false }))}
+    />
+  )
 
   if (loadError) return <LoadError message={loadError} onRetry={() => setLoadAttempt(a => a + 1)} onBack={() => router.push('/dashboard')} />
   if (!album) return (
@@ -810,7 +862,9 @@ export default function AlbumEditorPage() {
   // ══════════════════════════════════════════════════════════════
   if (isMobile) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
+      <>
+        {toastUI}
+        <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
         {/* Mobile topbar */}
         <div style={{ height: '54px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: '10px', flexShrink: 0 }}>
           <button className="btn btn-icon" onClick={() => router.push('/dashboard')} style={{ width: '36px', height: '36px' }}><I.Back /></button>
@@ -884,7 +938,8 @@ export default function AlbumEditorPage() {
         {showAIStyle && <AIStyleModal onClose={() => setShowAIStyle(false)} onGenerate={generateAILayout} loading={aiGenerating} />}
         {showAIRefine && <AIRefineModal onClose={() => setShowAIRefine(false)} onRefine={refineWithAI} loading={aiRefining} />}
         {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExportPDF} />}
-      </div>
+        </div>
+      </>
     )
   }
 
@@ -901,7 +956,9 @@ export default function AlbumEditorPage() {
   ]
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', overflow: 'hidden' }}>
+    <>
+      {toastUI}
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', overflow: 'hidden' }}>
 
       {/* ══════════ TOPBAR ════════════════════════════════════════ */}
       <header style={{
@@ -1249,7 +1306,8 @@ export default function AlbumEditorPage() {
       {showAIRefine && <AIRefineModal onClose={() => setShowAIRefine(false)} onRefine={refineWithAI} loading={aiRefining} />}
       {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExportPDF} />}
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
-    </div>
+      </div>
+    </>
   )
 }
 
